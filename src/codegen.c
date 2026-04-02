@@ -9,6 +9,7 @@
 typedef struct VarInfo {
     char name[64];
     TypeKind type;
+    int array_size; /* -1 = scalar, >=0 number of elements */
     struct VarInfo *next;
 } VarInfo;
 
@@ -110,18 +111,19 @@ void codegen_free(CodeGen *cg)
 
 /* ── Symbol table helpers ── */
 
-static void add_var(CodeGen *cg, const char *name, TypeKind type)
+static void add_var(CodeGen *cg, const char *name, TypeKind type, int array_size)
 {
     _CodeGen *ic = (_CodeGen *)cg;
     /* Don't add duplicate */
     VarInfo *v = ic->vars;
     while (v) {
-        if (strcmp(v->name, name) == 0) return;
+        if (strcmp(v->name, name) == 0) { return; }
         v = v->next;
     }
     VarInfo *ni = calloc(1, sizeof(VarInfo));
     strncpy(ni->name, name, sizeof(ni->name) - 1);
     ni->type = type;
+    ni->array_size = array_size;
     ni->next = ic->vars;
     ic->vars = ni;
 }
@@ -193,6 +195,7 @@ static TypeKind expr_type(CodeGen *cg, Expr *e)
         case EXPR_STR:  return TYPE_STR;
         case EXPR_IDENT:return lookup_var_type(cg, e->name);
         case EXPR_CALL: return lookup_func_return(cg, e->name);
+        case EXPR_ARRAY_ACCESS: return lookup_var_type(cg, e->name);
         case EXPR_BINOP: {
             if (e->op[0] == '&' && e->op[1] == '\0')
                 return TYPE_STR;
@@ -272,6 +275,14 @@ static char *expr_to_c(CodeGen *cg, Expr *e)
             }
             break;
         }
+        case EXPR_ARRAY_ACCESS: {
+            /* Find the array's element type from the symbol table */
+            TypeKind atype = lookup_var_type(cg, e->name);
+            char *idx_c = expr_to_c(cg, e->left);
+            snprintf(buf, sizeof(buf), "%s[%s]", e->name, idx_c);
+            free(idx_c);
+            break;
+        }
         case EXPR_CALL: {
             char args[1024] = {0};
             int offset = 0;
@@ -339,17 +350,31 @@ void codegen_statement(CodeGen *cg, Stmt *s)
         }
 
         case STMT_ASSIGN:
-            codegen_emit(cg, "%s = ", s->var);
+            if (s->index) {
+                char *idx_c = expr_to_c(cg, s->index);
+                codegen_emit(cg, "%s[%s] = ", s->var, idx_c);
+                free(idx_c);
+            } else {
+                codegen_emit(cg, "%s = ", s->var);
+            }
             codegen_expr(cg, s->expr);
             codegen_emit(cg, ";\n");
             break;
 
         case STMT_DIM:
-            add_var(cg, s->var, s->var_type);
-            if (s->var_type == TYPE_STR)
+            add_var(cg, s->var, s->var_type, s->array_size);
+            if (s->array_size > 0) {
+                codegen_emit(cg, "%s %s[%d];\n", c_type(s->var_type), s->var, s->array_size);
+                if (s->var_type == TYPE_STR) {
+                    /* Zero-initialized string array */
+                    for (int i = 0; i < s->array_size; i++)
+                        codegen_emit(cg, "%s[%d] = NULL;\n", s->var, i);
+                }
+            } else if (s->var_type == TYPE_STR) {
                 codegen_emit(cg, "%s %s = NULL;\n", c_type(s->var_type), s->var);
-            else
+            } else {
                 codegen_emit(cg, "%s %s = 0;\n", c_type(s->var_type), s->var);
+            }
             break;
 
         case STMT_IF: {
@@ -488,7 +513,7 @@ static void gen_param_types(CodeGen *cg, VarDecl *params)
 {
     VarDecl *v = params;
     while (v) {
-        add_var(cg, v->name, v->type);
+        add_var(cg, v->name, v->type, -1);
         v = v->next;
     }
 }
@@ -517,7 +542,7 @@ void codegen_proc(CodeGen *cg, Proc *proc)
     /* Add params to symbol table */
     v = proc->params;
     while (v) {
-        add_var(cg, v->name, v->type);
+        add_var(cg, v->name, v->type, -1);
         v = v->next;
     }
 

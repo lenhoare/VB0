@@ -37,9 +37,24 @@ static void expect(Parser *p, const char *kwd)
     }
 }
 
+/* ── Array variable tracking (for disambiguation) ── */
+static void register_array(Parser *p, const char *name)
+{
+    if (p->array_count < 32)
+        strncpy(p->array_vars[p->array_count++], name, 63);
+}
+
+static int is_array_var(Parser *p, const char *name)
+{
+    for (int i = 0; i < p->array_count; i++)
+        if (strcmp(p->array_vars[i], name) == 0) return 1;
+    return 0;
+}
+
 /* ── Forward declarations ── */
 static Expr *parse_expr(Parser *p, int precedence);
 static Stmt  *parse_statement(Parser *p);
+static Expr *parse_primary(Parser *p);
 
 /* ── Expressions (precedence climbing) ── */
 
@@ -61,18 +76,20 @@ static Expr *parse_primary(Parser *p)
         strncpy(name, p->current.text, sizeof(name) - 1);
         advance(p);
 
-        /* Check for function call */
+        /* Check for function call or array access */
         if (p->current.kind == T_LPAREN) {
             advance(p); /* skip ( */
-            Expr *args[8];
-            int nargs = 0;
-            while (p->current.kind != T_RPAREN && p->current.kind != T_EOF) {
-                if (nargs > 0 && p->current.kind == T_COMMA)
-                    advance(p);
-                args[nargs++] = parse_expr(p, 0);
-            }
+            Expr *idx = parse_expr(p, 0); /* single index expression */
             if (p->current.kind == T_RPAREN) advance(p);
-            e = expr_call(name, args, nargs, line);
+
+            /* Disambiguate: array access vs function call */
+            if (is_array_var(p, name)) {
+                e = expr_array_access(name, idx, line);
+            } else {
+                /* It's a function call with one argument */
+                Expr *args[1] = { idx };
+                e = expr_call(name, args, 1, line);
+            }
         } else {
             e = expr_ident(name, line);
         }
@@ -173,6 +190,29 @@ static Stmt *parse_statement(Parser *p)
             advance(p);
         }
 
+        int array_size = -1; /* default: scalar */
+        if (p->current.kind == T_LPAREN) {
+            advance(p);
+            int sz = 0;
+            if (p->current.kind == T_INT_LIT) {
+                sz = atoi(p->current.text);
+                advance(p);
+            } else if (p->current.kind == T_IDENT) {
+                /* Variable as array bound - use a large default */
+                sz = 100;
+                advance(p);
+            }
+            if (p->current.kind == T_RPAREN) {
+                advance(p);
+                array_size = sz + 1; /* 0-based: DIM a(10) => 11 elements */
+                register_array(p, name);
+            } else {
+                error_at(p, "Expected ')' after array size");
+                array_size = 0; /* empty array */
+                register_array(p, name);
+            }
+        }
+
         TypeKind type = TYPE_INT;
         if (kw(p->current.text, "AS")) {
             advance(p);
@@ -185,7 +225,7 @@ static Stmt *parse_statement(Parser *p)
             }
             advance(p);
         }
-        return stmt_dim(name, type, line);
+        return stmt_dim_arr(name, type, array_size, line);
     }
 
     /* PRINT */
@@ -362,44 +402,44 @@ static Stmt *parse_statement(Parser *p)
         return stmt_return(e, line);
     }
 
-    /* Assignment: var = expr  OR  Sub call: name(args) */
+    /* Assignment: var = expr, arr(idx) = expr, OR Sub call: name(args) */
     if (p->current.kind == T_IDENT) {
         char name[256] = {0};
         int name_line = p->current.line;
-        /* Save name without advancing */
         strncpy(name, p->current.text, sizeof(name) - 1);
-
-        /* Peek ahead: check next token */
-        Token saved = p->current;
         advance(p);
 
         if (p->current.kind == T_ASSIGN) {
-            /* It's an assignment: var = expr */
+            /* Regular assignment: var = expr */
             advance(p);
             Expr *e = parse_expr(p, 0);
             return stmt_assign(name, e, line);
         } else if (p->current.kind == T_LPAREN) {
-            /* It's a sub/function call: name(args) */
             advance(p);
-            Expr *args[8];
-            int nargs = 0;
-            while (p->current.kind != T_RPAREN && p->current.kind != T_EOF) {
-                if (nargs > 0 && p->current.kind == T_COMMA)
-                    advance(p);
-                args[nargs++] = parse_expr(p, 0);
-            }
+            Expr *idx = parse_expr(p, 0);
             if (p->current.kind == T_RPAREN) advance(p);
-            /* If used as a statement (not in expression context), treat as sub call */
-            return stmt_sub_call(name, args, nargs, name_line);
+
+            if (is_array_var(p, name) && p->current.kind == T_ASSIGN) {
+                /* Array element assignment: arr(idx) = expr */
+                advance(p);
+                Expr *e = parse_expr(p, 0);
+                return stmt_assign_index(name, idx, e, line);
+            } else if (is_array_var(p, name)) {
+                /* Array access used as statement (shouldn't happen typically) */
+                error_at(p, "Array access cannot be used as a statement");
+                return NULL;
+            } else {
+                /* Sub/function call: name(args) */
+                Expr *args[1] = { idx };
+                int nargs = 1;
+                return stmt_sub_call(name, args, nargs, name_line);
+            }
         } else {
-            /* Identifier not followed by = or ( - it's an unknown statement */
-            /* The saved token is the bad identifier itself. We've already
-               advanced past it (p->current is the next token), just report
-               the error and let the caller's loop continue. The bad token
-               (THISWILLFAIL in the test) has been consumed. */
+            /* Identifier not followed by = or ( - unknown statement */
             error_at(p, "Unknown statement or undeclared keyword");
             return NULL;
-        }    }
+        }
+    }
 
     error_at(p, "Unknown statement");
     if (p->current.kind != T_EOF) advance(p);

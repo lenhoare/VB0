@@ -16,6 +16,7 @@ typedef enum {
     EXPR_DBL,
     EXPR_STR,
     EXPR_IDENT,
+    EXPR_ARRAY_ACCESS,
     EXPR_BINOP,
     EXPR_CALL,
     EXPR_GROUP,
@@ -58,6 +59,7 @@ typedef enum {
 typedef struct VarDecl {
     char name[64];
     TypeKind type;
+    int array_size; /* -1 = scalar, >= 0 = number of elements */
     struct VarDecl *next;
 } VarDecl;
 
@@ -65,8 +67,10 @@ typedef struct Stmt {
     StmtKind kind;
     Expr  *cond;         /* IF, DO */
     Expr  *expr;         /* DIM, PRINT (sometimes), ASSIGN (right hand) */
+    Expr  *index;        /* Array index expression for assignment arr(i) = x */
     char   var[64];      /* DIM/ASSIGN target */
     TypeKind var_type;   /* DIM type */
+    int    array_size;   /* DIM: -1 scalar, >=0 array upper bound (size = bound+1) */
     struct Stmt *block;  /* IF THEN block */
     struct Stmt *else_block; /* ELSE block */
     struct Stmt *next_stmt;  /* linked list of statements */
@@ -116,9 +120,11 @@ Expr *expr_str(const char *val, int line);
 Expr *expr_ident(const char *name, int line);
 Expr *expr_binop(Expr *l, const char *op, Expr *r, int line);
 Expr *expr_call(const char *name, Expr **args, int nargs, int line);
+Expr *expr_array_access(const char *name, Expr *index, int line);
+
+Stmt *stmt_assign_index(const char *v, Expr *idx, Expr *e, int line);
 
 Stmt *stmt_print(Expr *e, int line);
-Stmt *stmt_assign(const char *v, Expr *e, int line);
 Stmt *stmt_if(Expr *cond, Stmt *then_block, Stmt *else_block, int line);
 Stmt *stmt_do_loop(Expr *cond, Stmt *body, int line);
 Stmt *stmt_for_next(const char *var, Expr *start, Expr *end, Expr *step_val, Stmt *body, int line);
@@ -126,6 +132,7 @@ Stmt *stmt_exit_do(int line);
 Stmt *stmt_exit_for(int line);
 Stmt *stmt_return(Expr *e, int line);
 Stmt *stmt_dim(const char *name, TypeKind type, int line);
+Stmt *stmt_dim_arr(const char *name, TypeKind type, int array_size, int line);
 Stmt *stmt_block(void);
 Stmt *stmt_sub_call(const char *name, Expr **args, int nargs, int line);
 Stmt *stmt_append(Stmt *block, Stmt *s);
