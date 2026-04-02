@@ -70,13 +70,14 @@ Expr *expr_call(const char *name, Expr **args, int nargs, int line)
     return e;
 }
 
-Expr *expr_array_access(const char *name, Expr *index, int line)
+Expr *expr_array_access(const char *name, Expr *index1, Expr *index2, int line)
 {
     Expr *e = calloc(1, sizeof(Expr));
     e->kind = EXPR_ARRAY_ACCESS;
     e->type = TYPE_INT; /* resolved later by codegen */
     strncpy(e->name, name, sizeof(e->name) - 1);
-    e->left = index; /* index expression */
+    e->left = index1;
+    e->right = index2;
     e->line = line;
     return e;
 }
@@ -102,12 +103,13 @@ Stmt *stmt_assign(const char *v, Expr *e, int line)
     return s;
 }
 
-Stmt *stmt_assign_index(const char *v, Expr *idx, Expr *e, int line)
+Stmt *stmt_assign_index2(const char *v, Expr *idx1, Expr *idx2, Expr *e, int line)
 {
     Stmt *s = calloc(1, sizeof(Stmt));
     s->kind = STMT_ASSIGN;
     strncpy(s->var, v, sizeof(s->var) - 1);
-    s->index = idx;
+    s->index = idx1;
+    s->index2 = idx2;
     s->expr = e;
     s->line = line;
     return s;
@@ -182,13 +184,14 @@ Stmt *stmt_dim(const char *name, TypeKind type, int line)
     return s;
 }
 
-Stmt *stmt_dim_arr(const char *name, TypeKind type, int array_size, int line)
+Stmt *stmt_dim_arr(const char *name, TypeKind type, int array_size, int array_size2, int line)
 {
     Stmt *s = calloc(1, sizeof(Stmt));
     s->kind = STMT_DIM;
     strncpy(s->var, name, sizeof(s->var) - 1);
     s->var_type = type;
     s->array_size = array_size;
+    s->array_size2 = array_size2;
     s->line = line;
     return s;
 }

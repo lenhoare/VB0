@@ -60,6 +60,7 @@ typedef struct VarDecl {
     char name[64];
     TypeKind type;
     int array_size; /* -1 = scalar, >= 0 = number of elements */
+    int array_size2; /* second dimension: -1 = not 2D, >= 0 = number of elements */
     struct VarDecl *next;
 } VarDecl;
 
@@ -67,10 +68,12 @@ typedef struct Stmt {
     StmtKind kind;
     Expr  *cond;         /* IF, DO */
     Expr  *expr;         /* DIM, PRINT (sometimes), ASSIGN (right hand) */
-    Expr  *index;        /* Array index expression for assignment arr(i) = x */
+    Expr  *index;        /* 1st index for arr(i) = x or arr(i,j) = x */
+    Expr  *index2;       /* 2nd index for arr(i,j) = x */
     char   var[64];      /* DIM/ASSIGN target */
     TypeKind var_type;   /* DIM type */
     int    array_size;   /* DIM: -1 scalar, >=0 array upper bound (size = bound+1) */
+    int    array_size2;  /* DIM 2nd dim: -1 = not 2D, >=0 2nd dim upper bound */
     struct Stmt *block;  /* IF THEN block */
     struct Stmt *else_block; /* ELSE block */
     struct Stmt *next_stmt;  /* linked list of statements */
@@ -120,11 +123,12 @@ Expr *expr_str(const char *val, int line);
 Expr *expr_ident(const char *name, int line);
 Expr *expr_binop(Expr *l, const char *op, Expr *r, int line);
 Expr *expr_call(const char *name, Expr **args, int nargs, int line);
-Expr *expr_array_access(const char *name, Expr *index, int line);
+Expr *expr_array_access(const char *name, Expr *index1, Expr *index2, int line);
 
-Stmt *stmt_assign_index(const char *v, Expr *idx, Expr *e, int line);
+Stmt *stmt_assign_index2(const char *v, Expr *idx1, Expr *idx2, Expr *e, int line);
 
 Stmt *stmt_print(Expr *e, int line);
+Stmt *stmt_assign(const char *v, Expr *e, int line);
 Stmt *stmt_if(Expr *cond, Stmt *then_block, Stmt *else_block, int line);
 Stmt *stmt_do_loop(Expr *cond, Stmt *body, int line);
 Stmt *stmt_for_next(const char *var, Expr *start, Expr *end, Expr *step_val, Stmt *body, int line);
@@ -132,7 +136,7 @@ Stmt *stmt_exit_do(int line);
 Stmt *stmt_exit_for(int line);
 Stmt *stmt_return(Expr *e, int line);
 Stmt *stmt_dim(const char *name, TypeKind type, int line);
-Stmt *stmt_dim_arr(const char *name, TypeKind type, int array_size, int line);
+Stmt *stmt_dim_arr(const char *name, TypeKind type, int array_size, int array_size2, int line);
 Stmt *stmt_block(void);
 Stmt *stmt_sub_call(const char *name, Expr **args, int nargs, int line);
 Stmt *stmt_append(Stmt *block, Stmt *s);

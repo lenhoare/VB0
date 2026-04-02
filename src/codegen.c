@@ -9,7 +9,8 @@
 typedef struct VarInfo {
     char name[64];
     TypeKind type;
-    int array_size; /* -1 = scalar, >=0 number of elements */
+    int array_size;  /* -1 = scalar, >=0 number of elements */
+    int array_size2; /* -1 = not 2D, >=0 2nd dim size */
     struct VarInfo *next;
 } VarInfo;
 
@@ -111,7 +112,7 @@ void codegen_free(CodeGen *cg)
 
 /* ── Symbol table helpers ── */
 
-static void add_var(CodeGen *cg, const char *name, TypeKind type, int array_size)
+static void add_var(CodeGen *cg, const char *name, TypeKind type, int array_size, int array_size2)
 {
     _CodeGen *ic = (_CodeGen *)cg;
     /* Don't add duplicate */
@@ -124,6 +125,7 @@ static void add_var(CodeGen *cg, const char *name, TypeKind type, int array_size
     strncpy(ni->name, name, sizeof(ni->name) - 1);
     ni->type = type;
     ni->array_size = array_size;
+    ni->array_size2 = array_size2;
     ni->next = ic->vars;
     ic->vars = ni;
 }
@@ -276,11 +278,17 @@ static char *expr_to_c(CodeGen *cg, Expr *e)
             break;
         }
         case EXPR_ARRAY_ACCESS: {
-            /* Find the array's element type from the symbol table */
-            TypeKind atype = lookup_var_type(cg, e->name);
-            char *idx_c = expr_to_c(cg, e->left);
-            snprintf(buf, sizeof(buf), "%s[%s]", e->name, idx_c);
-            free(idx_c);
+            char *i1 = expr_to_c(cg, e->left);
+            if (e->right) {
+                /* 2D: arr[i][j] */
+                char *i2 = expr_to_c(cg, e->right);
+                snprintf(buf, sizeof(buf), "%s[%s][%s]", e->name, i1, i2);
+                free(i2);
+            } else {
+                /* 1D: arr[i] */
+                snprintf(buf, sizeof(buf), "%s[%s]", e->name, i1);
+            }
+            free(i1);
             break;
         }
         case EXPR_CALL: {
@@ -350,7 +358,15 @@ void codegen_statement(CodeGen *cg, Stmt *s)
         }
 
         case STMT_ASSIGN:
-            if (s->index) {
+            if (s->index2) {
+                /* 2D: arr[i][j] = val */
+                char *i1 = expr_to_c(cg, s->index);
+                char *i2 = expr_to_c(cg, s->index2);
+                codegen_emit(cg, "%s[%s][%s] = ", s->var, i1, i2);
+                free(i1);
+                free(i2);
+            } else if (s->index) {
+                /* 1D: arr[i] = val */
                 char *idx_c = expr_to_c(cg, s->index);
                 codegen_emit(cg, "%s[%s] = ", s->var, idx_c);
                 free(idx_c);
@@ -362,11 +378,19 @@ void codegen_statement(CodeGen *cg, Stmt *s)
             break;
 
         case STMT_DIM:
-            add_var(cg, s->var, s->var_type, s->array_size);
-            if (s->array_size > 0) {
+            add_var(cg, s->var, s->var_type, s->array_size, s->array_size2);
+            if (s->array_size > 0 && s->array_size2 > 0) {
+                /* 2D array: type arr[rows][cols] */
+                codegen_emit(cg, "%s %s[%d][%d];\n", c_type(s->var_type), s->var, s->array_size, s->array_size2);
+                if (s->var_type == TYPE_STR) {
+                    for (int i = 0; i < s->array_size; i++)
+                        for (int j = 0; j < s->array_size2; j++)
+                            codegen_emit(cg, "%s[%d][%d] = NULL;\n", s->var, i, j);
+                }
+            } else if (s->array_size > 0) {
+                /* 1D array */
                 codegen_emit(cg, "%s %s[%d];\n", c_type(s->var_type), s->var, s->array_size);
                 if (s->var_type == TYPE_STR) {
-                    /* Zero-initialized string array */
                     for (int i = 0; i < s->array_size; i++)
                         codegen_emit(cg, "%s[%d] = NULL;\n", s->var, i);
                 }
@@ -513,7 +537,7 @@ static void gen_param_types(CodeGen *cg, VarDecl *params)
 {
     VarDecl *v = params;
     while (v) {
-        add_var(cg, v->name, v->type, -1);
+        add_var(cg, v->name, v->type, -1, -1);
         v = v->next;
     }
 }
@@ -542,7 +566,7 @@ void codegen_proc(CodeGen *cg, Proc *proc)
     /* Add params to symbol table */
     v = proc->params;
     while (v) {
-        add_var(cg, v->name, v->type, -1);
+        add_var(cg, v->name, v->type, -1, -1);
         v = v->next;
     }
 

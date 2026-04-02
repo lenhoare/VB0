@@ -79,16 +79,28 @@ static Expr *parse_primary(Parser *p)
         /* Check for function call or array access */
         if (p->current.kind == T_LPAREN) {
             advance(p); /* skip ( */
-            Expr *idx = parse_expr(p, 0); /* single index expression */
+            Expr *idx1 = parse_expr(p, 0);
+            Expr *idx2 = NULL;
+            /* Check for 2D array access: name(i, j) */
+            if (p->current.kind == T_COMMA) {
+                advance(p);
+                idx2 = parse_expr(p, 0);
+            }
             if (p->current.kind == T_RPAREN) advance(p);
 
             /* Disambiguate: array access vs function call */
             if (is_array_var(p, name)) {
-                e = expr_array_access(name, idx, line);
+                e = expr_array_access(name, idx1, idx2, line);
             } else {
-                /* It's a function call with one argument */
-                Expr *args[1] = { idx };
-                e = expr_call(name, args, 1, line);
+                /* It's a function call (single argument for now, or multi if comma detected) */
+                if (idx2) {
+                    /* Two arguments to a non-array = multi-arg function call */
+                    Expr *args[2] = { idx1, idx2 };
+                    e = expr_call(name, args, 2, line);
+                } else {
+                    Expr *args[1] = { idx1 };
+                    e = expr_call(name, args, 1, line);
+                }
             }
         } else {
             e = expr_ident(name, line);
@@ -191,6 +203,7 @@ static Stmt *parse_statement(Parser *p)
         }
 
         int array_size = -1; /* default: scalar */
+        int array_size2 = -1; /* second dimension */
         if (p->current.kind == T_LPAREN) {
             advance(p);
             int sz = 0;
@@ -198,17 +211,29 @@ static Stmt *parse_statement(Parser *p)
                 sz = atoi(p->current.text);
                 advance(p);
             } else if (p->current.kind == T_IDENT) {
-                /* Variable as array bound - use a large default */
                 sz = 100;
                 advance(p);
             }
+            /* Check for 2D array: name(rows, cols) */
+            if (p->current.kind == T_COMMA) {
+                advance(p);
+                int sz2 = 0;
+                if (p->current.kind == T_INT_LIT) {
+                    sz2 = atoi(p->current.text);
+                    advance(p);
+                } else if (p->current.kind == T_IDENT) {
+                    sz2 = 100;
+                    advance(p);
+                }
+                array_size2 = sz2 + 1;
+            }
             if (p->current.kind == T_RPAREN) {
                 advance(p);
-                array_size = sz + 1; /* 0-based: DIM a(10) => 11 elements */
+                array_size = sz + 1; /* 0-based */
                 register_array(p, name);
             } else {
                 error_at(p, "Expected ')' after array size");
-                array_size = 0; /* empty array */
+                array_size = 0;
                 register_array(p, name);
             }
         }
@@ -225,7 +250,7 @@ static Stmt *parse_statement(Parser *p)
             }
             advance(p);
         }
-        return stmt_dim_arr(name, type, array_size, line);
+        return stmt_dim_arr(name, type, array_size, array_size2, line);
     }
 
     /* PRINT */
@@ -416,23 +441,32 @@ static Stmt *parse_statement(Parser *p)
             return stmt_assign(name, e, line);
         } else if (p->current.kind == T_LPAREN) {
             advance(p);
-            Expr *idx = parse_expr(p, 0);
+            Expr *idx1 = parse_expr(p, 0);
+            Expr *idx2 = NULL;
+            /* Check for 2D: name(i, j) = expr */
+            if (p->current.kind == T_COMMA) {
+                advance(p);
+                idx2 = parse_expr(p, 0);
+            }
             if (p->current.kind == T_RPAREN) advance(p);
 
             if (is_array_var(p, name) && p->current.kind == T_ASSIGN) {
-                /* Array element assignment: arr(idx) = expr */
+                /* Array element assignment: arr(idx) = expr or arr(i,j) = expr */
                 advance(p);
                 Expr *e = parse_expr(p, 0);
-                return stmt_assign_index(name, idx, e, line);
+                return stmt_assign_index2(name, idx1, idx2, e, line);
             } else if (is_array_var(p, name)) {
-                /* Array access used as statement (shouldn't happen typically) */
                 error_at(p, "Array access cannot be used as a statement");
                 return NULL;
             } else {
-                /* Sub/function call: name(args) */
-                Expr *args[1] = { idx };
-                int nargs = 1;
-                return stmt_sub_call(name, args, nargs, name_line);
+                /* Sub/function call */
+                if (idx2) {
+                    Expr *args[2] = { idx1, idx2 };
+                    return stmt_sub_call(name, args, 2, name_line);
+                } else {
+                    Expr *args[1] = { idx1 };
+                    return stmt_sub_call(name, args, 1, name_line);
+                }
             }
         } else {
             /* Identifier not followed by = or ( - unknown statement */

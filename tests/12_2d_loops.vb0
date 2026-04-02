@@ -1,0 +1,22 @@
+' 2D array in loops
+DIM m(2, 2) AS INT
+DIM i AS INT
+DIM j AS INT
+DIM s AS INT
+
+FOR i = 0 TO 2
+    FOR j = 0 TO 2
+        m(i, j) = i * 10 + j
+    NEXT
+NEXT
+
+s = 0
+FOR i = 0 TO 2
+    PRINT m(i, 0)
+NEXT
+
+FOR i = 0 TO 2
+    s = s + m(i, i)
+NEXT
+PRINT s
+END
