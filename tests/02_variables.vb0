@@ -1,0 +1,12 @@
+' Test: variables, arithmetic, and print
+DIM x AS INT
+DIM y AS DOUBLE
+DIM msg AS STRING
+
+x = 10
+y = 3.14
+
+PRINT x + 5
+PRINT y * 2
+PRINT "Arithmetic works!"
+END

@@ -1,0 +1,15 @@
+' Test: nested control flow
+DIM i AS INT
+DIM j AS INT
+
+FOR i = 1 TO 3
+    PRINT i
+    IF i = 2 THEN
+        PRINT "  two!"
+    END IF
+    FOR j = 10 TO 10 STEP 1
+        PRINT j
+    NEXT
+NEXT
+
+END

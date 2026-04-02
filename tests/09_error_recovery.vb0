@@ -1,0 +1,5 @@
+' Test: error recovery
+PRINT "before"
+THISWILLFAIL
+PRINT "after"
+END

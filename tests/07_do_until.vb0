@@ -1,0 +1,9 @@
+' Test: DO UNTIL
+DIM x AS INT
+x = 0
+DO UNTIL x >= 3
+    PRINT x
+    x = x + 1
+LOOP
+
+END

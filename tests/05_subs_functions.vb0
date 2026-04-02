@@ -1,0 +1,16 @@
+' Test: SUB and FUNCTION
+SUB Greet(name AS STRING)
+    PRINT "Hello, " & name
+END SUB
+
+FUNCTION Add(a AS INT, b AS INT) AS INT
+    RETURN a + b
+END FUNCTION
+
+DIM result AS INT
+result = Add(3, 7)
+PRINT result
+
+Greet("World")
+
+END

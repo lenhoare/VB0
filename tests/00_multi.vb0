@@ -1,0 +1,5 @@
+PRINT "before"
+DIM x AS INT
+x = 5
+PRINT "after"
+END

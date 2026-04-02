@@ -1,0 +1,5 @@
+' Test: string assignment
+DIM name AS STRING
+name = "World"
+PRINT "Hello, " & name
+END

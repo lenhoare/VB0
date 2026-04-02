@@ -1,0 +1,15 @@
+' Test: IF THEN ELSE END IF
+DIM x AS INT
+x = 10
+
+IF x > 5 THEN
+    PRINT "x is greater than 5"
+ELSE
+    PRINT "x is 5 or less"
+END IF
+
+IF x = 10 THEN
+    PRINT "x is exactly 10"
+END IF
+
+END

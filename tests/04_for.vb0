@@ -1,0 +1,12 @@
+' Test: FOR NEXT loop
+DIM i AS INT
+
+FOR i = 1 TO 5
+    PRINT i
+NEXT
+
+FOR i = 10 TO 2 STEP -2
+    PRINT i
+NEXT
+
+END
