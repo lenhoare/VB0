@@ -236,3 +236,42 @@ Proc *proc_new(ProcKind kind, const char *name, TypeKind ret_type, VarDecl *para
     p->body = body;
     return p;
 }
+
+ClassDef *classdef_new(const char *name)
+{
+    ClassDef *c = calloc(1, sizeof(ClassDef));
+    strncpy(c->name, name, sizeof(c->name) - 1);
+    return c;
+}
+
+void classdef_append(ClassDef *cls, void *item, int item_type)
+{
+    if (item_type == 0) {
+        /* VarDecl field */
+        VarDecl *v = (VarDecl *)item;
+        VarDecl **next_ptr = &cls->fields;
+        while (*next_ptr) next_ptr = &(*next_ptr)->next;
+        *next_ptr = v;
+    } else if (item_type == 1) {
+        /* Proc method */
+        Proc *p = (Proc *)item;
+        if (!cls->methods) cls->methods = p;
+        else { Proc *m = cls->methods; while (m->next) m = m->next; m->next = p; }
+    } else if (item_type == 2) {
+        /* PropertyDef */
+        PropertyDef *prop = (PropertyDef *)item;
+        if (!cls->properties) cls->properties = prop;
+        else { PropertyDef *p2 = cls->properties; while (p2->next) p2 = p2->next; p2->next = prop; }
+    }
+}
+
+PropertyDef *property_new(const char *name, TypeKind type, int is_let, VarDecl *params, Stmt *body)
+{
+    PropertyDef *p = calloc(1, sizeof(PropertyDef));
+    strncpy(p->name, name, sizeof(p->name) - 1);
+    p->type = type;
+    p->is_let = is_let;
+    p->params = params;
+    p->body = body;
+    return p;
+}

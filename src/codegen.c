@@ -165,8 +165,177 @@ static const char *c_type(TypeKind t)
 
 /* ── Expression to C ── */
 
-/* Forward declare */
+/* Forward declare for recursive use */
 static char *expr_to_c(CodeGen *cg, Expr *e);
+
+/* Forward declarations for functions used by class helpers */
+static char *escape_string(const char *s);
+static TypeKind expr_type(CodeGen *cg, Expr *e);
+/* codegen_statement is declared in codegen.h (non-static) */
+
+/* Check if a named identifier is a field in the current class context */
+typedef struct {
+    char class_name[64];
+    VarDecl *fields;
+} ClassCtx;
+
+static ClassCtx current_class = {0};
+
+static int is_class_field(const char *name)
+{
+    VarDecl *v = current_class.fields;
+    while (v) {
+        if (strcmp(v->name, name) == 0) return 1;
+        v = v->next;
+    }
+    return 0;
+}
+
+/* Emit an expression, rewriting field refs to _self->field */
+static char *class_expr_to_c(CodeGen *cg, Expr *e)
+{
+    if (!e) return strdup("0");
+    char buf[2048];
+    switch (e->kind) {
+        case EXPR_IDENT:
+            if (is_class_field(e->name)) {
+                snprintf(buf, sizeof(buf), "_self->%s", e->name);
+                return strdup(buf);
+            }
+            snprintf(buf, sizeof(buf), "%s", e->name);
+            return strdup(buf);
+        case EXPR_INT:
+            snprintf(buf, sizeof(buf), "%ld", e->int_val);
+            return strdup(buf);
+        case EXPR_DBL:
+            snprintf(buf, sizeof(buf), "%g", e->dbl_val);
+            return strdup(buf);
+        case EXPR_STR: {
+            char *esc = escape_string(e->str_val);
+            snprintf(buf, sizeof(buf), "%s", esc);
+            free(esc);
+            return strdup(buf);
+        }
+        case EXPR_ARRAY_ACCESS: {
+            char *i1 = class_expr_to_c(cg, e->left);
+            if (e->right) {
+                char *i2 = class_expr_to_c(cg, e->right);
+                snprintf(buf, sizeof(buf), "%s[%s][%s]", e->name, i1, i2);
+                free(i2);
+            } else {
+                snprintf(buf, sizeof(buf), "%s[%s]", e->name, i1);
+            }
+            free(i1);
+            return strdup(buf);
+        }
+        case EXPR_BINOP: {
+            if (e->op[0] == '&' && e->op[1] == '\0') {
+                char *lc = class_expr_to_c(cg, e->left);
+                char *rc = class_expr_to_c(cg, e->right);
+                snprintf(buf, sizeof(buf), "_vb0_strcat(%s, %s)", lc, rc);
+                free(lc); free(rc);
+                return strdup(buf);
+            } else if (e->right) {
+                char *lc = class_expr_to_c(cg, e->left);
+                char *rc = class_expr_to_c(cg, e->right);
+                snprintf(buf, sizeof(buf), "(%s %s %s)", lc, e->op, rc);
+                free(lc); free(rc);
+                return strdup(buf);
+            } else {
+                char *lc = class_expr_to_c(cg, e->left);
+                snprintf(buf, sizeof(buf), "(!%s)", lc);
+                free(lc);
+                return strdup(buf);
+            }
+        }
+        case EXPR_CALL: {
+            char args[1024] = {0};
+            int offset = 0;
+            for (int i = 0; i < e->arg_count; i++) {
+                char *ac = class_expr_to_c(cg, e->args[i]);
+                offset += snprintf(args + offset, sizeof(args) - offset,
+                                   "%s%s", i > 0 ? ", " : "", ac);
+                free(ac);
+            }
+            snprintf(buf, sizeof(buf), "%s(%s)", e->name, args);
+            return strdup(buf);
+        }
+        default:
+            return strdup("0");
+    }
+}
+
+/* Emit statements for class methods, rewriting field refs */
+static void class_codegen_body(CodeGen *cg, Stmt *s)
+{
+    if (!s || s->kind != STMT_BLOCK) return;
+    s = s->next_stmt;
+    while (s) {
+        switch (s->kind) {
+            case STMT_PRINT: {
+                TypeKind t = expr_type(cg, s->expr);
+                if (t == TYPE_STR) {
+                    codegen_emit(cg, "printf(\"%%s\\n\", ");
+                    codegen_emit(cg, "%s);\n", class_expr_to_c(cg, s->expr));
+                } else if (t == TYPE_DBL) {
+                    codegen_emit(cg, "printf(\"%%g\\n\", ");
+                    codegen_emit(cg, "%s);\n", class_expr_to_c(cg, s->expr));
+                } else {
+                    codegen_emit(cg, "printf(\"%%d\\n\", ");
+                    codegen_emit(cg, "%s);\n", class_expr_to_c(cg, s->expr));
+                }
+                break;
+            }
+            case STMT_ASSIGN:
+                if (s->index2) {
+                    codegen_emit(cg, "%s[%s][%s] = ", s->var, class_expr_to_c(cg, s->index), class_expr_to_c(cg, s->index2));
+                } else if (s->index) {
+                    codegen_emit(cg, "%s[%s] = ", s->var, class_expr_to_c(cg, s->index));
+                } else {
+                    const char *lhs = is_class_field(s->var) ? "_self->" : "";
+                    codegen_emit(cg, "%s%s = ", lhs, s->var);
+                }
+                codegen_emit(cg, "%s;\n", class_expr_to_c(cg, s->expr));
+                break;
+            default:
+                /* Fallback: use regular codegen for complex stmts */
+                codegen_statement(cg, s);
+                break;
+        }
+        s = s->next_stmt;
+    }
+}
+
+/* Emit a method body with class context */
+static void codegen_class_method(CodeGen *cg, const char *class_name, Proc *method)
+{
+    /* Save and restore class context for potential nesting */
+    ClassCtx saved_ctx = current_class;
+    
+    /* Find the class to get fields (passed by caller via current_class setup) */
+    if (method->kind == PROC_FUNCTION) {
+        cg_emit_raw(cg, "%s %s_%s(", class_name, method->name, class_name);
+    } else {
+        cg_emit_raw(cg, "void %s_%s(", class_name, method->name);
+    }
+    /* First param: _self pointer */
+    cg_emit_raw(cg, "%s *_self", class_name);
+    
+    VarDecl *v = method->params;
+    while (v) {
+        cg_emit_raw(cg, ", %s %s", c_type(v->type), v->name);
+        v = v->next;
+    }
+    cg_emit_raw(cg, ") {\n");
+    cg->indent = 1;
+    
+    class_codegen_body(cg, method->body);
+    
+    cg->indent = 0;
+    cg_emit_raw(cg, "}\n\n");
+    
+    current_class = saved_ctx;
+}
 
 static char *escape_string(const char *s)
 {

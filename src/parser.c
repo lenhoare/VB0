@@ -55,6 +55,7 @@ static int is_array_var(Parser *p, const char *name)
 static Expr *parse_expr(Parser *p, int precedence);
 static Stmt  *parse_statement(Parser *p);
 static Expr *parse_primary(Parser *p);
+static ClassDef *parse_class(Parser *p);
 
 /* ── Expressions (precedence climbing) ── */
 
@@ -581,7 +582,134 @@ static Proc *parse_proc(Parser *p)
     return proc_new(kind, name, ret_type, params, body);
 }
 
-/* ── Main parse entry ── */
+/* ── Class parsing ── */
+
+static ClassDef *parse_class(Parser *p)
+{
+    /* Called after PUBLIC/CLASS is seen. Consume CLASS token first */
+    if (kw(p->current.text, "CLASS")) advance(p);
+    if (kw(p->current.text, "PUBLIC")) advance(p);
+
+    char name[256] = {0};
+    if (p->current.kind == T_IDENT) {
+        strncpy(name, p->current.text, sizeof(name) - 1);
+        advance(p);
+    }
+
+    ClassDef *cls = classdef_new(name);
+
+    while (p->current.kind != T_EOF) {
+        /* END CLASS -- close the class */
+        if (kw(p->current.text, "END")) {
+            advance(p);
+            if (kw(p->current.text, "CLASS")) advance(p);
+            break;
+        }
+        /* Skip PUBLIC keyword within class */
+        if (kw(p->current.text, "PUBLIC")) advance(p);
+
+        /* DIM -- field declaration */
+        if (kw(p->current.text, "DIM")) {
+            advance(p);
+            char fname[256] = {0};
+            if (p->current.kind == T_IDENT) {
+                strncpy(fname, p->current.text, sizeof(fname) - 1);
+                advance(p);
+            }
+            /* Skip optional (N) for arrays - treat as scalar for now */
+            if (p->current.kind == T_LPAREN) {
+                advance(p);
+                while (p->current.kind != T_RPAREN && p->current.kind != T_EOF)
+                    advance(p);
+                if (p->current.kind == T_RPAREN) advance(p);
+            }
+            TypeKind ftype = TYPE_INT;
+            if (kw(p->current.text, "AS")) {
+                advance(p);
+                if (kw(p->current.text, "INT") || kw(p->current.text, "INTEGER")) ftype = TYPE_INT;
+                else if (kw(p->current.text, "DOUBLE")) ftype = TYPE_DBL;
+                else if (kw(p->current.text, "STRING")) ftype = TYPE_STR;
+                advance(p);
+            }
+            VarDecl *v = calloc(1, sizeof(VarDecl));
+            strncpy(v->name, fname, sizeof(v->name) - 1);
+            v->type = ftype;
+            classdef_append(cls, v, 0);
+            continue;
+        }
+
+        /* PROPERTY GET / PROPERTY LET */
+        if (kw(p->current.text, "PROPERTY")) {
+            advance(p);
+            int is_let = 0;
+            if (kw(p->current.text, "GET")) {
+                advance(p);
+                is_let = 0;
+            } else if (kw(p->current.text, "LET")) {
+                advance(p);
+                is_let = 1;
+            }
+
+            char pname[256] = {0};
+            if (p->current.kind == T_IDENT) {
+                strncpy(pname, p->current.text, sizeof(pname) - 1);
+                advance(p);
+            }
+
+            VarDecl *pparams = NULL;
+            if (p->current.kind == T_LPAREN) {
+                advance(p);
+                if (!is_let) {
+                    /* PROPERTY GET() - empty params */
+                    if (p->current.kind == T_RPAREN) advance(p);
+                } else {
+                    /* PROPERTY LET(val AS TYPE) - one param */
+                    pparams = parse_param_list(p);
+                    if (p->current.kind == T_RPAREN) advance(p);
+                }
+            }
+
+            TypeKind pretype = TYPE_INT;
+            if (kw(p->current.text, "AS")) {
+                advance(p);
+                if (kw(p->current.text, "INT") || kw(p->current.text, "INTEGER")) pretype = TYPE_INT;
+                else if (kw(p->current.text, "DOUBLE")) pretype = TYPE_DBL;
+                else if (kw(p->current.text, "STRING")) pretype = TYPE_STR;
+                advance(p);
+            }
+
+            Stmt *pbody = stmt_block();
+            while (p->current.kind != T_EOF) {
+                if (kw(p->current.text, "END")) {
+                    advance(p);
+                    if (kw(p->current.text, "PROPERTY")) advance(p);
+                    break;
+                }
+                Stmt *s = parse_statement(p);
+                if (s) stmt_append(pbody, s);
+            }
+
+            PropertyDef *prop = property_new(pname, pretype, is_let, pparams, pbody);
+            classdef_append(cls, prop, 2);
+            continue;
+        }
+
+        /* SUB / FUNCTION method */
+        if (kw(p->current.text, "SUB") || kw(p->current.text, "FUNCTION")) {
+            Proc *method = parse_proc(p);
+            if (method) {
+                classdef_append(cls, method, 1);
+            }
+            continue;
+        }
+
+        /* Unknown - skip line */
+        error_at(p, "Unexpected token in class body");
+        advance(p);
+    }
+
+    return cls;
+}
 
 void parser_init(Parser *p, char *source)
 {
@@ -596,6 +724,40 @@ Program *parser_parse(Parser *p)
     Stmt *block = stmt_block();
 
     while (p->current.kind != T_EOF) {
+        /* Check for CLASS definition */
+        if (kw(p->current.text, "CLASS")) {
+            ClassDef *cls = parse_class(p);
+            if (cls) {
+                if (!prog->first_class)
+                    prog->first_class = cls;
+                else
+                    prog->last_class->next = cls;
+                prog->last_class = cls;
+                continue;
+            }
+        }
+        if (kw(p->current.text, "PUBLIC")) {
+            /* Peek ahead: PUBLIC CLASS? */
+            Token saved = p->current;
+            advance(p);
+            if (kw(p->current.text, "CLASS")) {
+                /* Rewind - parse_class will handle PUBLIC itself */
+                p->current = saved;
+                ClassDef *cls = parse_class(p);
+                if (cls) {
+                    if (!prog->first_class)
+                        prog->first_class = cls;
+                    else
+                        prog->last_class->next = cls;
+                    prog->last_class = cls;
+                    continue;
+                }
+            } else {
+                /* Rewind and proceed with top-level statement */
+                p->current = saved;
+            }
+        }
+
         /* Check for SUB or FUNCTION definition */
         if (kw(p->current.text, "SUB") || kw(p->current.text, "FUNCTION")) {
             Proc *proc = parse_proc(p);

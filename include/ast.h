@@ -53,6 +53,9 @@ typedef enum {
     STMT_EXIT_DO,
     STMT_EXIT_FOR,
     STMT_SUB_CALL,
+    STMT_CLASS,
+    STMT_PROPERTY_GET,
+    STMT_PROPERTY_LET,
 } StmtKind;
 
 /* Declaration of a variable or parameter */
@@ -63,6 +66,37 @@ typedef struct VarDecl {
     int array_size2; /* second dimension: -1 = not 2D, >= 0 = number of elements */
     struct VarDecl *next;
 } VarDecl;
+
+typedef struct Stmt Stmt;
+typedef struct Proc Proc;
+typedef struct ClassDef ClassDef;
+typedef struct PropertyDef PropertyDef;
+
+/* A property (getter or setter) within a class */
+typedef struct PropertyDef {
+    char name[64];
+    TypeKind type;
+    VarDecl *params;
+    Stmt *body;
+    int is_let;
+    struct PropertyDef *next;
+} PropertyDef;
+
+/* A class definition */
+typedef struct ClassDef {
+    char name[64];
+    VarDecl *fields;
+    Proc *methods;
+    PropertyDef *properties;
+    struct ClassDef *next;
+} ClassDef;
+
+/* Class info: tracks user-defined types */
+typedef struct ClassInfo {
+    char name[64];
+    VarDecl *fields;
+    struct ClassInfo *next;
+} ClassInfo;
 
 typedef struct Stmt {
     StmtKind kind;
@@ -109,11 +143,13 @@ typedef struct Proc {
     struct Proc *next;
 } Proc;
 
-/* Top-level program = main + procedures + globals */
+/* Top-level program = main + procedures + globals + classes */
 typedef struct {
     Proc *main;
     Proc *first_proc;
     Proc *last_proc;
+    ClassDef *first_class;
+    ClassDef *last_class;
 } Program;
 
 /* Constructors */
@@ -141,6 +177,11 @@ Stmt *stmt_block(void);
 Stmt *stmt_sub_call(const char *name, Expr **args, int nargs, int line);
 Stmt *stmt_append(Stmt *block, Stmt *s);
 
+ClassDef *classdef_new(const char *name);
+void classdef_append(ClassDef *cls, void *item, int item_type);
+/* item_type: 0 = VarDecl(field), 1 = Proc(method), 2 = PropertyDef(property) */
+
 Proc *proc_new(ProcKind kind, const char *name, TypeKind ret_type, VarDecl *params, Stmt *body);
+PropertyDef *property_new(const char *name, TypeKind type, int is_let, VarDecl *params, Stmt *body);
 
 #endif
