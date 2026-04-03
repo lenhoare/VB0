@@ -28,6 +28,7 @@ typedef enum {
     T_RPAREN,
     T_COMMA,
     T_AMPERSAND,
+    T_DOT,
 } TokenKind;
 
 typedef struct {

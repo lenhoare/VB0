@@ -51,6 +51,24 @@ static int is_array_var(Parser *p, const char *name)
     return 0;
 }
 
+/* ── Class type tracking (for WITH block resolution) ── */
+static void register_class_var(Parser *p, const char *vname, const char *ctype)
+{
+    if (p->class_var_count < 64) {
+        strncpy(p->class_var_names[p->class_var_count], vname, 63);
+        strncpy(p->class_var_types[p->class_var_count], ctype, 63);
+        p->class_var_count++;
+    }
+}
+
+static const char *find_class_for_var(Parser *p, const char *vname)
+{
+    for (int i = 0; i < p->class_var_count; i++)
+        if (strcmp(p->class_var_names[i], vname) == 0)
+            return p->class_var_types[i];
+    return NULL;
+}
+
 /* ── Forward declarations ── */
 static Expr *parse_expr(Parser *p, int precedence);
 static Stmt  *parse_statement(Parser *p);
@@ -101,6 +119,46 @@ static Expr *parse_primary(Parser *p)
                 } else {
                     Expr *args[1] = { idx1 };
                     e = expr_call(name, args, 1, line);
+                }
+            }
+            } else if (p->current.kind == T_DOT) {
+            /* Object member access in expression: a.Balance, a.Method() */
+            advance(p); /* skip . */
+            char member[256] = {0};
+            if (p->current.kind == T_IDENT) {
+                strncpy(member, p->current.text, sizeof(member) - 1);
+                advance(p);
+            }
+
+            const char *cls_type = find_class_for_var(p, name);
+
+            if (p->current.kind == T_LPAREN) {
+                /* a.Method(args) in expression context */
+                advance(p);
+                Expr *args[8];
+                int nargs = 0;
+                while (p->current.kind != T_EOF && p->current.kind != T_RPAREN && nargs < 8) {
+                    args[nargs++] = parse_expr(p, 0);
+                    if (p->current.kind == T_COMMA) advance(p);
+                }
+                if (p->current.kind == T_RPAREN) advance(p);
+
+                char fn[256];
+                snprintf(fn, sizeof(fn), "%s_%s", cls_type ? cls_type : name, member);
+                e = expr_call(fn, args, nargs, line);
+            } else {
+                /* a.Property in expression - generate getter call with obj ref */
+                if (cls_type) {
+                    char fn[256];
+                    snprintf(fn, sizeof(fn), "%s_%s_get", cls_type, member);
+                    /* Pack object ref as first arg: Account_Balance_get(&a) */
+                    Expr *arg = calloc(1, sizeof(Expr));
+                    arg->kind = EXPR_IDENT;
+                    snprintf(arg->name, sizeof(arg->name), "&%s", name);
+                    Expr *args[1] = { arg };
+                    e = expr_call(fn, args, 1, line);
+                } else {
+                    e = expr_ident(name, line);
                 }
             }
         } else {
@@ -242,14 +300,24 @@ static Stmt *parse_statement(Parser *p)
         TypeKind type = TYPE_INT;
         if (kw(p->current.text, "AS")) {
             advance(p);
-            if (kw(p->current.text, "INT") || kw(p->current.text, "INTEGER")) {
-                type = TYPE_INT;
-            } else if (kw(p->current.text, "DOUBLE")) {
-                type = TYPE_DBL;
-            } else if (kw(p->current.text, "STRING")) {
-                type = TYPE_STR;
+            if (kw(p->current.text, "NEW")) {
+                advance(p);
+                char cls_name[256] = {0};
+                if (p->current.kind == T_IDENT) {
+                    strncpy(cls_name, p->current.text, sizeof(cls_name) - 1);
+                    advance(p);
+                    register_class_var(p, name, cls_name);
+                }
+            } else {
+                if (kw(p->current.text, "INT") || kw(p->current.text, "INTEGER")) {
+                    type = TYPE_INT;
+                } else if (kw(p->current.text, "DOUBLE")) {
+                    type = TYPE_DBL;
+                } else if (kw(p->current.text, "STRING")) {
+                    type = TYPE_STR;
+                }
+                advance(p);
             }
-            advance(p);
         }
         return stmt_dim_arr(name, type, array_size, array_size2, line);
     }
@@ -428,12 +496,114 @@ static Stmt *parse_statement(Parser *p)
         return stmt_return(e, line);
     }
 
-    /* Assignment: var = expr, arr(idx) = expr, OR Sub call: name(args) */
+    /* WITH / END WITH - must check BEFORE generic T_IDENT handler */
+    if (kw(p->current.text, "WITH")) {
+        advance(p);
+        char with_var[64] = {0};
+        if (p->current.kind == T_IDENT) {
+            strncpy(with_var, p->current.text, sizeof(with_var) - 1);
+            advance(p);
+        }
+
+        const char *cls_type = find_class_for_var(p, with_var);
+
+        Stmt *body = stmt_block();
+        while (p->current.kind != T_EOF && !kw(p->current.text, "END")) {
+            if (p->current.kind == T_DOT) {
+                advance(p);
+                char member[256] = {0};
+                int mem_line = p->current.line;
+                if (p->current.kind == T_IDENT) {
+                    strncpy(member, p->current.text, sizeof(member) - 1);
+                    advance(p);
+                }
+
+                if (p->current.kind == T_LPAREN) {
+                    advance(p);
+                    Expr *args[8];
+                    int nargs = 0;
+                    while (p->current.kind != T_EOF && p->current.kind != T_RPAREN && nargs < 8) {
+                        args[nargs++] = parse_expr(p, 0);
+                        if (p->current.kind == T_COMMA) advance(p);
+                    }
+                    if (p->current.kind == T_RPAREN) advance(p);
+
+                    char fn[256];
+                    snprintf(fn, sizeof(fn), "%s_%s", cls_type ? cls_type : with_var, member);
+                    Stmt *mc = stmt_sub_call(fn, args, nargs, mem_line);
+                    strncpy(mc->loop_var, with_var, sizeof(mc->loop_var) - 1);
+                    stmt_append(body, mc);
+                } else if (p->current.kind == T_ASSIGN) {
+                    advance(p);
+                    Expr *e = parse_expr(p, 0);
+                    char fn[256];
+                    snprintf(fn, sizeof(fn), "%s_%s_let", cls_type ? cls_type : with_var, member);
+                    Stmt *ps = stmt_with_prop_set(fn, e, with_var, mem_line);
+                    stmt_append(body, ps);
+                }
+                continue;
+            }
+
+            Stmt *s = parse_statement(p);
+            if (s) stmt_append(body, s);
+        }
+
+        if (kw(p->current.text, "END")) {
+            advance(p);
+            if (kw(p->current.text, "WITH")) advance(p);
+        }
+
+        return stmt_with_block(with_var, body, line);
+    }
+
+    /* Assignment, sub call, OR obj.method() call */
     if (p->current.kind == T_IDENT) {
         char name[256] = {0};
         int name_line = p->current.line;
         strncpy(name, p->current.text, sizeof(name) - 1);
         advance(p);
+
+        /* Check for obj.member() or obj.member = expr */
+        if (p->current.kind == T_DOT) {
+            advance(p); /* skip . */
+            char member[256] = {0};
+            int mem_line = p->current.line;
+            if (p->current.kind == T_IDENT) {
+                strncpy(member, p->current.text, sizeof(member) - 1);
+                advance(p);
+            }
+
+            const char *cls_type = find_class_for_var(p, name);
+
+            if (p->current.kind == T_LPAREN) {
+                /* Object method call: obj.method(args) */
+                advance(p);
+                Expr *args[8];
+                int nargs = 0;
+                while (p->current.kind != T_EOF && p->current.kind != T_RPAREN && nargs < 8) {
+                    args[nargs++] = parse_expr(p, 0);
+                    if (p->current.kind == T_COMMA) advance(p);
+                }
+                if (p->current.kind == T_RPAREN) advance(p);
+
+                char fn[256];
+                snprintf(fn, sizeof(fn), "%s_%s", cls_type ? cls_type : name, member);
+                Stmt *mc = stmt_sub_call(fn, args, nargs, mem_line);
+                strncpy(mc->loop_var, name, sizeof(mc->loop_var) - 1);
+                return mc;
+            } else if (p->current.kind == T_ASSIGN) {
+                /* Object property setter: obj.prop = expr */
+                advance(p);
+                Expr *e = parse_expr(p, 0);
+                char fn[256];
+                snprintf(fn, sizeof(fn), "%s_%s_let", cls_type ? cls_type : name, member);
+                return stmt_with_prop_set(fn, e, name, mem_line);
+            }
+
+            /* obj.member without () or = - property getter reference */
+            error_at(p, "Property reference must be used with parentheses or assignment");
+            return NULL;
+        }
 
         if (p->current.kind == T_ASSIGN) {
             /* Regular assignment: var = expr */
@@ -452,7 +622,6 @@ static Stmt *parse_statement(Parser *p)
             if (p->current.kind == T_RPAREN) advance(p);
 
             if (is_array_var(p, name) && p->current.kind == T_ASSIGN) {
-                /* Array element assignment: arr(idx) = expr or arr(i,j) = expr */
                 advance(p);
                 Expr *e = parse_expr(p, 0);
                 return stmt_assign_index2(name, idx1, idx2, e, line);
@@ -470,7 +639,7 @@ static Stmt *parse_statement(Parser *p)
                 }
             }
         } else {
-            /* Identifier not followed by = or ( - unknown statement */
+            /* Identifier not followed by =, (, or . - unknown statement */
             error_at(p, "Unknown statement or undeclared keyword");
             return NULL;
         }
@@ -605,8 +774,16 @@ static ClassDef *parse_class(Parser *p)
             if (kw(p->current.text, "CLASS")) advance(p);
             break;
         }
-        /* Skip PUBLIC keyword within class */
-        if (kw(p->current.text, "PUBLIC")) advance(p);
+
+        int is_private = 0;
+        /* Visibility modifiers */
+        if (kw(p->current.text, "PUBLIC")) {
+            advance(p);
+            is_private = 0;
+        } else if (kw(p->current.text, "PRIVATE")) {
+            advance(p);
+            is_private = 1;
+        }
 
         /* DIM -- field declaration */
         if (kw(p->current.text, "DIM")) {
@@ -629,6 +806,12 @@ static ClassDef *parse_class(Parser *p)
                 if (kw(p->current.text, "INT") || kw(p->current.text, "INTEGER")) ftype = TYPE_INT;
                 else if (kw(p->current.text, "DOUBLE")) ftype = TYPE_DBL;
                 else if (kw(p->current.text, "STRING")) ftype = TYPE_STR;
+                else if (kw(p->current.text, "NEW")) {
+                    advance(p);
+                    /* DIM name AS NEW ClassName - class-typed field */
+                    if (p->current.kind == T_IDENT) advance(p);
+                    ftype = TYPE_INT;
+                }
                 advance(p);
             }
             VarDecl *v = calloc(1, sizeof(VarDecl));
@@ -636,6 +819,40 @@ static ClassDef *parse_class(Parser *p)
             v->type = ftype;
             classdef_append(cls, v, 0);
             continue;
+        }
+
+        /* Bare field: name AS TYPE (after PUBLIC/PRIVATE, without DIM) */
+        /* Only try this if we consumed a visibility modifier and it's not a keyword */
+        if (p->current.kind == T_IDENT &&
+            !kw(p->current.text, "SUB") &&
+            !kw(p->current.text, "FUNCTION") &&
+            !kw(p->current.text, "PROPERTY") &&
+            !kw(p->current.text, "DIM") &&
+            !kw(p->current.text, "END") &&
+            !kw(p->current.text, "PUBLIC") &&
+            !kw(p->current.text, "PRIVATE")) {
+            char bname[256] = {0};
+            strncpy(bname, p->current.text, sizeof(bname) - 1);
+            advance(p);
+            if (kw(p->current.text, "AS")) {
+                advance(p);
+                TypeKind ftype = TYPE_INT;
+                if (kw(p->current.text, "NEW")) {
+                    advance(p);
+                    if (p->current.kind == T_IDENT) advance(p);
+                    ftype = TYPE_INT;
+                } else {
+                    if (kw(p->current.text, "INT") || kw(p->current.text, "INTEGER")) ftype = TYPE_INT;
+                    else if (kw(p->current.text, "DOUBLE")) ftype = TYPE_DBL;
+                    else if (kw(p->current.text, "STRING")) ftype = TYPE_STR;
+                    advance(p);
+                }
+                VarDecl *v = calloc(1, sizeof(VarDecl));
+                strncpy(v->name, bname, sizeof(v->name) - 1);
+                v->type = ftype;
+                classdef_append(cls, v, 0);
+                continue;
+            }
         }
 
         /* PROPERTY GET / PROPERTY LET */

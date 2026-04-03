@@ -1,0 +1,26 @@
+CLASS Counter
+    DIM value AS INT
+
+    PUBLIC SUB Init()
+        value = 0
+    END SUB
+
+    PUBLIC SUB Add(n AS INT)
+        value = value + n
+    END SUB
+
+    PUBLIC SUB Show()
+        PRINT value
+    END SUB
+END CLASS
+
+DIM c AS NEW Counter
+c.Init()
+
+WITH c
+    .Add(10)
+    .Show()
+END WITH
+
+PRINT "=== Done ==="
+END

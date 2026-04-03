@@ -275,3 +275,24 @@ PropertyDef *property_new(const char *name, TypeKind type, int is_let, VarDecl *
     p->body = body;
     return p;
 }
+
+Stmt *stmt_with_block(const char *with_var, Stmt *body, int line)
+{
+    Stmt *s = calloc(1, sizeof(Stmt));
+    s->kind = STMT_WITH;
+    strncpy(s->var, with_var, sizeof(s->var) - 1);
+    s->body = body;
+    s->line = line;
+    return s;
+}
+
+Stmt *stmt_with_prop_set(const char *prop_name, Expr *e, const char *with_var, int line)
+{
+    Stmt *s = calloc(1, sizeof(Stmt));
+    s->kind = STMT_WITH_PROP_SET;
+    strncpy(s->var, prop_name, sizeof(s->var) - 1);
+    s->expr = e;
+    strncpy(s->loop_var, with_var, sizeof(s->loop_var) - 1);
+    s->line = line;
+    return s;
+}

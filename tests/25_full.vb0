@@ -1,0 +1,49 @@
+PUBLIC CLASS Account
+    PRIVATE balance AS INT
+    DIM owner AS STRING
+
+    PUBLIC SUB INIT()
+        balance = 100
+        owner = "savings"  
+    END SUB
+
+    PUBLIC SUB TERMINATE()
+        PRINT "Account TERMINATED"
+    END SUB
+
+    PUBLIC SUB Deposit(amount AS INT)
+        balance = balance + amount
+    END SUB
+
+    PUBLIC SUB Show()
+        PRINT balance
+    END SUB
+
+    PUBLIC SUB ShowOwner()
+        PRINT owner
+    END SUB
+
+    PROPERTY GET Balance() AS INT
+        Balance = balance
+    END PROPERTY
+
+    PROPERTY LET Balance(value AS INT)
+        balance = value
+    END PROPERTY
+END CLASS
+
+PRINT "=== DIM AS NEW ==="
+DIM a AS NEW Account
+a.Show()
+a.ShowOwner()
+
+PRINT "=== WITH block ==="
+WITH a
+    .Deposit(100)
+    .Show()
+    .Balance = 999
+    .Show()
+END WITH
+
+PRINT "=== Done ==="
+END

@@ -1,0 +1,32 @@
+PUBLIC CLASS Account
+    PRIVATE balance AS INT
+    DIM name AS STRING
+
+    PUBLIC SUB INIT()
+        balance = 100
+        name = "savings"
+    END SUB
+
+    PROPERTY GET Balance() AS INT
+        Balance = balance
+    END PROPERTY
+
+    PROPERTY LET Balance(value AS INT)
+        balance = value
+    END PROPERTY
+
+    PUBLIC SUB Show()
+        PRINT balance
+    END SUB
+END CLASS
+
+' Test: DIM AS NEW
+DIM a AS NEW Account
+a.Show()
+
+' Test: Property GET/LET
+a.Balance = 500
+a.Show()
+
+PRINT "done"
+END

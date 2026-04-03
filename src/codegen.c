@@ -177,9 +177,21 @@ static TypeKind expr_type(CodeGen *cg, Expr *e);
 typedef struct {
     char class_name[64];
     VarDecl *fields;
+    int is_getter; /* true when emitting PROPERTY GET body */
 } ClassCtx;
 
 static ClassCtx current_class = {0};
+
+static TypeKind lookup_field_type(const char *name)
+{
+    if (!current_class.fields) return TYPE_INT;
+    VarDecl *v = current_class.fields;
+    while (v) {
+        if (strcmp(v->name, name) == 0) return v->type;
+        v = v->next;
+    }
+    return TYPE_INT;
+}
 
 static int is_class_field(const char *name)
 {
@@ -292,6 +304,12 @@ static void class_codegen_body(CodeGen *cg, Stmt *s)
                 } else if (s->index) {
                     codegen_emit(cg, "%s[%s] = ", s->var, class_expr_to_c(cg, s->index));
                 } else {
+                    /* Check if we're in a PROPERTY GET context - emit return instead */
+                    if (current_class.is_getter) {
+                        /* In PROPERTY GET: 'Property = value' means 'return value' */
+                        codegen_emit(cg, "return %s;\n", class_expr_to_c(cg, s->expr));
+                        break;
+                    }
                     const char *lhs = is_class_field(s->var) ? "_self->" : "";
                     codegen_emit(cg, "%s%s = ", lhs, s->var);
                 }
@@ -364,7 +382,10 @@ static TypeKind expr_type(CodeGen *cg, Expr *e)
         case EXPR_INT:  return TYPE_INT;
         case EXPR_DBL:  return TYPE_DBL;
         case EXPR_STR:  return TYPE_STR;
-        case EXPR_IDENT:return lookup_var_type(cg, e->name);
+        case EXPR_IDENT:
+            if (!is_class_field(e->name))
+                return lookup_var_type(cg, e->name);
+            return lookup_field_type(e->name);
         case EXPR_CALL: return lookup_func_return(cg, e->name);
         case EXPR_ARRAY_ACCESS: return lookup_var_type(cg, e->name);
         case EXPR_BINOP: {
@@ -685,11 +706,33 @@ void codegen_statement(CodeGen *cg, Stmt *s)
             break;
 
         case STMT_SUB_CALL:
-            codegen_emit(cg, "%s(", s->var);
-            for (int i = 0; i < s->call_args; i++) {
-                if (i > 0) codegen_emit(cg, ", ");
-                codegen_expr(cg, s->call_arg_list[i]);
+            if (s->loop_var[0] != '\0') {
+                /* WITH context: prepend &obj as first arg */
+                codegen_emit(cg, "%s(&%s", s->var, s->loop_var);
+                for (int i = 0; i < s->call_args; i++) {
+                    codegen_emit(cg, ", ");
+                    codegen_expr(cg, s->call_arg_list[i]);
+                }
+                codegen_emit(cg, ");\n");
+            } else {
+                codegen_emit(cg, "%s(", s->var);
+                for (int i = 0; i < s->call_args; i++) {
+                    if (i > 0) codegen_emit(cg, ", ");
+                    codegen_expr(cg, s->call_arg_list[i]);
+                }
+                codegen_emit(cg, ");\n");
             }
+            break;
+
+        case STMT_WITH:
+            /* Just emit the body statements; prefixing handled by sub-cases */
+            if (s->body) codegen_statement(cg, s->body);
+            break;
+
+        case STMT_WITH_PROP_SET:
+            /* Emit: ClassName_prop_let(&obj, expr) */
+            codegen_emit(cg, "%s(&%s, ", s->var, s->loop_var);
+            codegen_expr(cg, s->expr);
             codegen_emit(cg, ");\n");
             break;
 
@@ -775,7 +818,57 @@ void codegen_program(CodeGen *cg, Program *prog)
         "}\n\n"
     );
 
-    /* Forward declarations for all procs */
+    /* ── Class struct typedefs ── */
+    ClassDef *cls = prog->first_class;
+    while (cls) {
+        cg_emit_raw(cg, "typedef struct {\n");
+        VarDecl *f = cls->fields;
+        while (f) {
+            cg_emit_raw(cg, "    %s %s;\n", c_type(f->type), f->name);
+            f = f->next;
+        }
+        cg_emit_raw(cg, "} %s;\n\n", cls->name);
+        cls = cls->next;
+    }
+
+    /* ── Class method forward declarations ── */
+    cls = prog->first_class;
+    while (cls) {
+        /* Methods */
+        Proc *m = cls->methods;
+        while (m) {
+            if (m->kind == PROC_FUNCTION) {
+                cg_emit_raw(cg, "%s %s_%s(%s *_self", c_type(m->return_type), cls->name, m->name, cls->name);
+            } else {
+                cg_emit_raw(cg, "void %s_%s(%s *_self", cls->name, m->name, cls->name);
+            }
+            VarDecl *v = m->params;
+            while (v) {
+                cg_emit_raw(cg, ", %s %s", c_type(v->type), v->name);
+                v = v->next;
+            }
+            cg_emit_raw(cg, ");\n");
+            m = m->next;
+        }
+        /* Property getters/setters */
+        PropertyDef *prop = cls->properties;
+        while (prop) {
+            if (prop->is_let) {
+                VarDecl *v = prop->params;
+                cg_emit_raw(cg, "void %s_%s_let(%s *_self", cls->name, prop->name, cls->name);
+                if (v) {
+                    cg_emit_raw(cg, ", %s %s", c_type(v->type), v->name);
+                }
+                cg_emit_raw(cg, ");\n");
+            } else {
+                cg_emit_raw(cg, "%s %s_%s_get(%s *_self);\n", c_type(prop->type), cls->name, prop->name, cls->name);
+            }
+            prop = prop->next;
+        }
+        cls = cls->next;
+    }
+
+    /* Forward declarations for procedures */
     Proc *p = prog->first_proc;
     while (p) {
         if (p->kind == PROC_FUNCTION) {
@@ -805,6 +898,66 @@ void codegen_program(CodeGen *cg, Program *prog)
     while (p) {
         codegen_proc(cg, p);
         p = p->next;
+    }
+
+    /* ── Emit class method implementations ── */
+    cls = prog->first_class;
+    while (cls) {
+        /* Save class context for field rewriting */
+        ClassCtx saved_ctx = current_class;
+        current_class.class_name[0] = '\0';
+        strncpy(current_class.class_name, cls->name, 63);
+        current_class.fields = cls->fields;
+
+        /* Methods */
+        Proc *m = cls->methods;
+        while (m) {
+            if (m->kind == PROC_FUNCTION) {
+                cg_emit_raw(cg, "%s %s_%s(%s *_self", c_type(m->return_type), cls->name, m->name, cls->name);
+            } else {
+                cg_emit_raw(cg, "void %s_%s(%s *_self", cls->name, m->name, cls->name);
+            }
+            VarDecl *v = m->params;
+            while (v) {
+                cg_emit_raw(cg, ", %s %s", c_type(v->type), v->name);
+                v = v->next;
+            }
+            cg_emit_raw(cg, ") {\n");
+            cg->indent++;
+            class_codegen_body(cg, m->body);
+            cg->indent--;
+            cg_emit_raw(cg, "}\n\n");
+            m = m->next;
+        }
+
+        /* Property getters */
+        PropertyDef *prop = cls->properties;
+        while (prop) {
+            if (prop->is_let) {
+                VarDecl *v = prop->params;
+                cg_emit_raw(cg, "void %s_%s_let(%s *_self", cls->name, prop->name, cls->name);
+                if (v) {
+                    cg_emit_raw(cg, ", %s %s", c_type(v->type), v->name);
+                }
+                cg_emit_raw(cg, ") {\n");
+                cg->indent++;
+                class_codegen_body(cg, prop->body);
+                cg->indent--;
+                cg_emit_raw(cg, "}\n\n");
+            } else {
+                cg_emit_raw(cg, "%s %s_%s_get(%s *_self) {\n", c_type(prop->type), cls->name, prop->name, cls->name);
+                cg->indent++;
+                current_class.is_getter = 1;
+                class_codegen_body(cg, prop->body);
+                current_class.is_getter = 0;
+                cg->indent--;
+                cg_emit_raw(cg, "}\n\n");
+            }
+            prop = prop->next;
+        }
+
+        current_class = saved_ctx;
+        cls = cls->next;
     }
 
     /* Emit main */

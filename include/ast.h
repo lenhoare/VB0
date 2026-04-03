@@ -53,6 +53,8 @@ typedef enum {
     STMT_EXIT_DO,
     STMT_EXIT_FOR,
     STMT_SUB_CALL,
+    STMT_WITH,
+    STMT_WITH_PROP_SET,
     STMT_CLASS,
     STMT_PROPERTY_GET,
     STMT_PROPERTY_LET,
@@ -176,6 +178,8 @@ Stmt *stmt_dim_arr(const char *name, TypeKind type, int array_size, int array_si
 Stmt *stmt_block(void);
 Stmt *stmt_sub_call(const char *name, Expr **args, int nargs, int line);
 Stmt *stmt_append(Stmt *block, Stmt *s);
+Stmt *stmt_with_block(const char *with_var, Stmt *body, int line);
+Stmt *stmt_with_prop_set(const char *prop_name, Expr *e, const char *with_var, int line);
 
 ClassDef *classdef_new(const char *name);
 void classdef_append(ClassDef *cls, void *item, int item_type);

@@ -1,0 +1,58 @@
+' Test: all class features - PRIVATE, DIM AS NEW, PROPERTY GET/LET, WITH
+PUBLIC CLASS Account
+    PRIVATE balance AS INT
+    DIM name AS STRING
+
+    PUBLIC SUB INIT()
+        balance = 100
+        name = "savings"
+    END SUB
+
+    PROPERTY GET Balance() AS INT
+        Balance = balance
+    END PROPERTY
+
+    PROPERTY LET Balance(value AS INT)
+        balance = value
+    END PROPERTY
+
+    PUBLIC SUB Deposit(amount AS INT)
+        balance = balance + amount
+    END SUB
+
+    PUBLIC SUB Show()
+        PRINT balance
+    END SUB
+
+    PUBLIC SUB ShowName()
+        PRINT name
+    END SUB
+END CLASS
+
+PRINT "=== Test 1: DIM AS NEW ==="
+DIM a AS NEW Account
+a.Show()
+
+PRINT "=== Test 2: Property GET/LET ==="
+PRINT a.Balance
+a.Balance = 500
+PRINT a.Balance
+
+PRINT "=== Test 3: Method call ==="
+a.Deposit(50)
+a.Show()
+
+PRINT "=== Test 4: WITH block ==="
+WITH a
+    .Deposit(100)
+    .Show()
+END WITH
+
+PRINT "=== Test 5: WITH property shorthand ==="
+WITH a
+    .Balance = 999
+    .Show()
+END WITH
+
+PRINT "=== Done ==="
+END

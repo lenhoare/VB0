@@ -1,0 +1,21 @@
+PUBLIC CLASS Widget
+    DIM name AS STRING
+
+    PUBLIC SUB INIT()
+        name = "default"
+    END SUB
+
+    PUBLIC SUB TERMINATE()
+        PRINT "Widget destroyed"
+    END SUB
+
+    PUBLIC SUB Show()
+        PRINT name
+    END SUB
+END CLASS
+
+DIM w AS NEW Widget
+w.Show()
+w.TERMINATE()
+PRINT "end"
+END

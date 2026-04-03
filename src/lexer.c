@@ -193,6 +193,10 @@ Token lexer_next(Lexer *lex)
             advance(lex);
             tok.kind = T_AMPERSAND;
             break;
+        case '.':
+            advance(lex);
+            tok.kind = T_DOT;
+            break;
         default:
             fprintf(stderr, "Unknown character '%c' at line %d\n", c, lex->line);
             tok.kind = T_EOF;

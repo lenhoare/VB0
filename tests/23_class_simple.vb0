@@ -1,0 +1,14 @@
+PUBLIC CLASS Thing
+    DIM x AS INT
+    PUBLIC SUB SETX(v AS INT)
+        x = v
+    END SUB
+    PUBLIC SUB PRINTX()
+        PRINT x
+    END SUB
+END CLASS
+
+DIM t AS NEW Thing
+t.SETX(42)
+t.PRINTX()
+END

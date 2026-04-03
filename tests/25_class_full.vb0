@@ -1,0 +1,54 @@
+PUBLIC CLASS Account
+    PRIVATE balance AS INT
+    DIM owner AS STRING
+
+    PUBLIC SUB INIT()
+        balance = 0
+        owner = "anon"
+    END SUB
+
+    PROPERTY GET Balance() AS INT
+        Balance = balance
+    END PROPERTY
+
+    PROPERTY LET Balance(value AS INT)
+        balance = value
+    END PROPERTY
+
+    PUBLIC SUB Deposit(amount AS INT)
+        balance = balance + amount
+    END SUB
+
+    PUBLIC SUB Show()
+        PRINT balance
+    END SUB
+
+    PUBLIC SUB ShowOwner()
+        PRINT owner
+    END SUB
+END CLASS
+
+' Test DIM AS NEW
+DIM a AS NEW Account
+PRINT "=== INIT and Deposit ==="
+a.Deposit(100)
+a.Show()
+
+' Test Property GET/LET
+PRINT "=== Property GET ==="
+PRINT a.Balance
+PRINT "=== Property LET ==="
+a.Balance = 500
+a.Show()
+
+' Test WITH block
+PRINT "=== WITH block ==="
+WITH a
+    .Deposit(200)
+    .Show()
+    .Balance = 999
+    .Show()
+END WITH
+
+PRINT "=== Done ==="
+END
