@@ -1,0 +1,20 @@
+' Test: BOOLEAN type
+DIM b AS BOOLEAN
+b = TRUE
+PRINT b
+b = FALSE
+PRINT b
+PRINT TRUE
+PRINT FALSE
+PRINT TRUE = 1
+PRINT FALSE = 0
+b = TRUE
+IF b THEN
+    PRINT "yes"
+END IF
+b = FALSE
+IF NOT b THEN
+    PRINT "false works"
+END IF
+PRINT "=== Done ==="
+END

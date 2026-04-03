@@ -93,7 +93,15 @@ static Expr *parse_primary(Parser *p)
         char name[256];
         int line = p->current.line;
         strncpy(name, p->current.text, sizeof(name) - 1);
-        advance(p);
+        /* Check for boolean literals */
+        if (kw(name, "TRUE")) {
+            e = expr_int(1, line);
+            advance(p);
+        } else if (kw(name, "FALSE")) {
+            e = expr_int(0, line);
+            advance(p);
+        } else {
+            advance(p);
 
         /* Check for function call or array access */
         if (p->current.kind == T_LPAREN) {
@@ -160,6 +168,7 @@ static Expr *parse_primary(Parser *p)
             }
         } else {
             e = expr_ident(name, line);
+        }
         }
     } else if (p->current.kind == T_LPAREN) {
         advance(p);
@@ -305,14 +314,17 @@ static Stmt *parse_statement(Parser *p)
                     advance(p);
                     register_class_var(p, name, cls_name);
                 }
-            } else {
-                if (kw(p->current.text, "INT") || kw(p->current.text, "INTEGER")) {
-                    type = TYPE_INT;
-                } else if (kw(p->current.text, "DOUBLE")) {
-                    type = TYPE_DBL;
-                } else if (kw(p->current.text, "STRING")) {
-                    type = TYPE_STR;
-                }
+            } else if (kw(p->current.text, "BOOLEAN")) {
+                type = TYPE_BOOL;
+                advance(p);
+            } else if (kw(p->current.text, "INT") || kw(p->current.text, "INTEGER")) {
+                type = TYPE_INT;
+                advance(p);
+            } else if (kw(p->current.text, "DOUBLE")) {
+                type = TYPE_DBL;
+                advance(p);
+            } else if (kw(p->current.text, "STRING")) {
+                type = TYPE_STR;
                 advance(p);
             }
         }
@@ -800,7 +812,8 @@ static ClassDef *parse_class(Parser *p)
             TypeKind ftype = TYPE_INT;
             if (kw(p->current.text, "AS")) {
                 advance(p);
-                if (kw(p->current.text, "INT") || kw(p->current.text, "INTEGER")) ftype = TYPE_INT;
+                if (kw(p->current.text, "BOOLEAN")) ftype = TYPE_BOOL;
+                else if (kw(p->current.text, "INT") || kw(p->current.text, "INTEGER")) ftype = TYPE_INT;
                 else if (kw(p->current.text, "DOUBLE")) ftype = TYPE_DBL;
                 else if (kw(p->current.text, "STRING")) ftype = TYPE_STR;
                 else if (kw(p->current.text, "NEW")) {

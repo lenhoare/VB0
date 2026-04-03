@@ -198,6 +198,7 @@ static const char *c_type(TypeKind t)
         case TYPE_INT: return "int";
         case TYPE_DBL: return "double";
         case TYPE_STR: return "char*";
+        case TYPE_BOOL: return "int";
     }
     return "int";
 }

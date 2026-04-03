@@ -8,6 +8,7 @@ typedef enum {
     TYPE_INT,
     TYPE_DBL,
     TYPE_STR,
+    TYPE_BOOL,
 } TypeKind;
 
 /* Expression kinds */
