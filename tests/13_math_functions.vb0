@@ -1,0 +1,32 @@
+DIM x AS DOUBLE
+PRINT "=== Abs ==="
+PRINT Abs(-5)
+PRINT "=== Sqr ==="
+PRINT Sqr(16)
+PRINT "=== Sin ==="
+PRINT Sin(0)
+PRINT "=== Cos ==="
+PRINT Cos(0)
+PRINT "=== Tan ==="
+PRINT Tan(0)
+PRINT "=== Atn ==="
+PRINT Atn(1)
+PRINT "=== Exp ==="
+PRINT Exp(1)
+PRINT "=== Log ==="
+x = 2.718281828
+PRINT Log(x)
+PRINT "=== Sgn ==="
+PRINT Sgn(10)
+PRINT Sgn(0)
+PRINT Sgn(-10)
+PRINT "=== Int ==="
+PRINT Int(3.7)
+PRINT Int(-3.7)
+PRINT "=== Fix ==="
+PRINT Fix(3.7)
+PRINT Fix(-3.7)
+PRINT "=== Rnd ==="
+x = Rnd(0)
+PRINT x
+END

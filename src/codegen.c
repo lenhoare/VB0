@@ -141,8 +141,28 @@ static TypeKind lookup_var_type(CodeGen *cg, const char *name)
     return TYPE_INT;
 }
 
+static int is_math_func(const char *name)
+{
+    return strcasecmp(name, "sqr") == 0 ||
+           strcasecmp(name, "sin") == 0 ||
+           strcasecmp(name, "cos") == 0 ||
+           strcasecmp(name, "tan") == 0 ||
+           strcasecmp(name, "atn") == 0 ||
+           strcasecmp(name, "exp") == 0 ||
+           strcasecmp(name, "log") == 0 ||
+           strcasecmp(name, "rnd") == 0 ||
+           strcasecmp(name, "fix") == 0;
+    /* Note: Abs(), Int(), Sgn() return int */
+}
+
 static TypeKind lookup_func_return(CodeGen *cg, const char *name)
 {
+    if (is_math_func(name)) return TYPE_DBL;
+    if (strcasecmp(name, "sgn") == 0 || strcasecmp(name, "abs") == 0)
+        return TYPE_INT;
+    if (strcasecmp(name, "int") == 0)
+        return TYPE_DBL;
+
     _CodeGen *ic = (_CodeGen *)cg;
     Proc *p = ic->procs;
     while (p) {
@@ -261,6 +281,28 @@ static char *class_expr_to_c(CodeGen *cg, Expr *e)
             }
         }
         case EXPR_CALL: {
+            /* Map VB6 math function names */
+            const char *cfunc = e->name;
+            if (strcasecmp(cfunc, "sqr") == 0) cfunc = "sqrt";
+            else if (strcasecmp(cfunc, "atn") == 0) cfunc = "atan";
+            else if (strcasecmp(cfunc, "abs") == 0) cfunc = "abs";
+            else if (strcasecmp(cfunc, "sin") == 0) cfunc = "sin";
+            else if (strcasecmp(cfunc, "cos") == 0) cfunc = "cos";
+            else if (strcasecmp(cfunc, "tan") == 0) cfunc = "tan";
+            else if (strcasecmp(cfunc, "exp") == 0) cfunc = "exp";
+            else if (strcasecmp(cfunc, "log") == 0) cfunc = "log";
+            else if (strcasecmp(cfunc, "int") == 0) cfunc = "floor";
+            else if (strcasecmp(cfunc, "fix") == 0) cfunc = "trunc";
+            else if (strcasecmp(cfunc, "rnd") == 0) {
+                /* Rnd: return random [0,1) */
+                snprintf(buf, sizeof(buf), "_vb0_rnd()");
+                return strdup(buf);
+            } else if (strcasecmp(cfunc, "sgn") == 0) {
+                char *ac = class_expr_to_c(cg, e->arg_count > 0 ? e->args[0] : NULL);
+                snprintf(buf, sizeof(buf), "_vb0_sgn(%s)", ac);
+                free(ac);
+                return strdup(buf);
+            }
             char args[1024] = {0};
             int offset = 0;
             for (int i = 0; i < e->arg_count; i++) {
@@ -269,7 +311,7 @@ static char *class_expr_to_c(CodeGen *cg, Expr *e)
                                    "%s%s", i > 0 ? ", " : "", ac);
                 free(ac);
             }
-            snprintf(buf, sizeof(buf), "%s(%s)", e->name, args);
+            snprintf(buf, sizeof(buf), "%s(%s)", cfunc, args);
             return strdup(buf);
         }
         default:
@@ -482,6 +524,47 @@ static char *expr_to_c(CodeGen *cg, Expr *e)
             break;
         }
         case EXPR_CALL: {
+            /* Map VB6 math function names to C equivalents */
+            const char *cname = e->name;
+            
+            /* Rnd: no-arg form or Rnd(n) */
+            if (strcasecmp(cname, "rnd") == 0) {
+                char args_built[512] = {0};
+                if (e->arg_count > 0) {
+                    char *ac = expr_to_c(cg, e->args[0]);
+                    snprintf(args_built, sizeof(args_built), "%s", ac);
+                    free(ac);
+                }
+                snprintf(buf, sizeof(buf), "_vb0_rnd(%s)", args_built);
+                break;
+            }
+            /* Sgn: Sgn(number) */
+            if (strcasecmp(cname, "sgn") == 0) {
+                if (e->arg_count >= 1) {
+                    char *ac = expr_to_c(cg, e->args[0]);
+                    snprintf(buf, sizeof(buf), "_vb0_sgn(%s)", ac);
+                    free(ac);
+                } else {
+                    snprintf(buf, sizeof(buf), "_vb0_sgn(0)");
+                }
+                break;
+            }
+
+            /* All other calls: map name, then call normally */
+            const char *cfunc = cname;
+            if (strcasecmp(cname, "sqr") == 0) cfunc = "sqrt";
+            else if (strcasecmp(cname, "atn") == 0) cfunc = "atan";
+            else if (strcasecmp(cname, "abs") == 0) cfunc = "abs";
+            else if (strcasecmp(cname, "sin") == 0) cfunc = "sin";
+            else if (strcasecmp(cname, "cos") == 0) cfunc = "cos";
+            else if (strcasecmp(cname, "tan") == 0) cfunc = "tan";
+            else if (strcasecmp(cname, "exp") == 0) cfunc = "exp";
+            else if (strcasecmp(cname, "log") == 0) cfunc = "log";
+            else if (strcasecmp(cname, "int") == 0)
+                cfunc = "floor";
+            else if (strcasecmp(cname, "fix") == 0)
+                cfunc = "trunc";
+
             char args[1024] = {0};
             int offset = 0;
             for (int i = 0; i < e->arg_count; i++) {
@@ -490,7 +573,7 @@ static char *expr_to_c(CodeGen *cg, Expr *e)
                                    "%s%s", i > 0 ? ", " : "", ac);
                 free(ac);
             }
-            snprintf(buf, sizeof(buf), "%s(%s)", e->name, args);
+            snprintf(buf, sizeof(buf), "%s(%s)", cfunc, args);
             break;
         }
         default:
@@ -801,7 +884,8 @@ void codegen_program(CodeGen *cg, Program *prog)
     /* Header + runtime helpers */
     cg_emit_raw(cg, "#include <stdio.h>\n");
     cg_emit_raw(cg, "#include <stdlib.h>\n");
-    cg_emit_raw(cg, "#include <string.h>\n\n");
+    cg_emit_raw(cg, "#include <string.h>\n");
+    cg_emit_raw(cg, "#include <math.h>\n\n");
 
     /* Runtime: string concatenation helper */
     cg_emit_raw(cg,
@@ -815,6 +899,15 @@ void codegen_program(CodeGen *cg, Program *prog)
         "    strcpy(r, a);\n"
         "    strcat(r, b);\n"
         "    return r;\n"
+        "}\n\n"
+        "/* VB6 Rnd function: returns pseudo-random number in [0, 1) */\n"
+        "static double _vb0_rnd(int n) {\n"
+        "    (void)n;\n"
+        "    return (double)rand() / ((double)RAND_MAX + 1);\n"
+        "}\n\n"
+        "/* VB6 Sgn function: returns -1, 0, or 1 */\n"
+        "static int _vb0_sgn(int n) {\n"
+        "    return (n > 0) ? 1 : (n < 0) ? -1 : 0;\n"
         "}\n\n"
     );
 

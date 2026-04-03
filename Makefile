@@ -38,7 +38,7 @@ testall: $(TARGET)
 	@for f in tests/*.vb0; do \
 		echo "========= $$f ========="; \
 		./$(TARGET) "$$f" -o /tmp/test.c && \
-		gcc -Wall -Wextra -o /tmp/test /tmp/test.c && \
+		gcc -lm -Wall -Wextra -o /tmp/test /tmp/test.c && \
 		/tmp/test; \
 		echo ""; \
 	done
