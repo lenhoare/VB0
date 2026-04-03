@@ -98,28 +98,25 @@ static Expr *parse_primary(Parser *p)
         /* Check for function call or array access */
         if (p->current.kind == T_LPAREN) {
             advance(p); /* skip ( */
-            Expr *idx1 = parse_expr(p, 0);
-            Expr *idx2 = NULL;
-            /* Check for 2D array access: name(i, j) */
-            if (p->current.kind == T_COMMA) {
-                advance(p);
-                idx2 = parse_expr(p, 0);
+            Expr *args[8];
+            int nargs = 0;
+            if (p->current.kind != T_RPAREN) {
+                while (nargs < 8) {
+                    args[nargs++] = parse_expr(p, 0);
+                    if (p->current.kind == T_COMMA) {
+                        advance(p);
+                    } else {
+                        break;
+                    }
+                }
             }
             if (p->current.kind == T_RPAREN) advance(p);
 
             /* Disambiguate: array access vs function call */
-            if (is_array_var(p, name)) {
-                e = expr_array_access(name, idx1, idx2, line);
+            if (nargs <= 2 && is_array_var(p, name)) {
+                e = expr_array_access(name, nargs > 0 ? args[0] : NULL, nargs > 1 ? args[1] : NULL, line);
             } else {
-                /* It's a function call (single argument for now, or multi if comma detected) */
-                if (idx2) {
-                    /* Two arguments to a non-array = multi-arg function call */
-                    Expr *args[2] = { idx1, idx2 };
-                    e = expr_call(name, args, 2, line);
-                } else {
-                    Expr *args[1] = { idx1 };
-                    e = expr_call(name, args, 1, line);
-                }
+                e = expr_call(name, args, nargs, line);
             }
             } else if (p->current.kind == T_DOT) {
             /* Object member access in expression: a.Balance, a.Method() */

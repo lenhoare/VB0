@@ -155,13 +155,32 @@ static int is_math_func(const char *name)
     /* Note: Abs(), Int(), Sgn() return int */
 }
 
+static int is_str_func(const char *name)
+{
+    return strcasecmp(name, "ltrim") == 0 ||
+           strcasecmp(name, "rtrim") == 0 ||
+           strcasecmp(name, "trim") == 0 ||
+           strcasecmp(name, "lcase") == 0 ||
+           strcasecmp(name, "ucase") == 0 ||
+           strcasecmp(name, "left") == 0 ||
+           strcasecmp(name, "right") == 0 ||
+           strcasecmp(name, "mid") == 0 ||
+           strcasecmp(name, "strreverse") == 0 ||
+           strcasecmp(name, "reverse") == 0 ||
+           strcasecmp(name, "space") == 0 ||
+           strcasecmp(name, "replace") == 0 ||
+           strcasecmp(name, "chr") == 0 ||
+           strcasecmp(name, "char") == 0 ||
+           strcasecmp(name, "format") == 0;
+    /* Note: Len, Instr, InstrRev, Asc return int */
+}
+
 static TypeKind lookup_func_return(CodeGen *cg, const char *name)
 {
     if (is_math_func(name)) return TYPE_DBL;
+    if (is_str_func(name)) return TYPE_STR;
     if (strcasecmp(name, "sgn") == 0 || strcasecmp(name, "abs") == 0)
         return TYPE_INT;
-    if (strcasecmp(name, "int") == 0)
-        return TYPE_DBL;
 
     _CodeGen *ic = (_CodeGen *)cg;
     Proc *p = ic->procs;
@@ -291,7 +310,29 @@ static char *class_expr_to_c(CodeGen *cg, Expr *e)
             else if (strcasecmp(cfunc, "tan") == 0) cfunc = "tan";
             else if (strcasecmp(cfunc, "exp") == 0) cfunc = "exp";
             else if (strcasecmp(cfunc, "log") == 0) cfunc = "log";
-            else if (strcasecmp(cfunc, "int") == 0) cfunc = "floor";
+            /* String functions */
+            else if (strcasecmp(cfunc, "ltrim") == 0) cfunc = "_vb0_ltrim";
+            else if (strcasecmp(cfunc, "rtrim") == 0) cfunc = "_vb0_rtrim";
+            else if (strcasecmp(cfunc, "trim") == 0) cfunc = "_vb0_trim";
+            else if (strcasecmp(cfunc, "lcase") == 0) cfunc = "_vb0_lcase";
+            else if (strcasecmp(cfunc, "ucase") == 0) cfunc = "_vb0_ucase";
+            else if (strcasecmp(cfunc, "left") == 0) cfunc = "_vb0_strleft";
+            else if (strcasecmp(cfunc, "right") == 0) cfunc = "_vb0_strright";
+            else if (strcasecmp(cfunc, "mid") == 0) cfunc = "_vb0_mid";
+            else if (strcasecmp(cfunc, "strreverse") == 0 || strcasecmp(cfunc, "reverse") == 0)
+                cfunc = "_vb0_strreverse";
+            else if (strcasecmp(cfunc, "space") == 0) cfunc = "_vb0_space";
+            else if (strcasecmp(cfunc, "instr") == 0) cfunc = "_vb0_instr";
+            else if (strcasecmp(cfunc, "instrrev") == 0) cfunc = "_vb0_instrrev";
+            else if (strcasecmp(cfunc, "replace") == 0) cfunc = "_vb0_replace";
+            else if (strcasecmp(cfunc, "asc") == 0) cfunc = "_vb0_asc";
+            else if (strcasecmp(cfunc, "chr") == 0 || strcasecmp(cfunc, "char") == 0)
+                cfunc = "_vb0_chr";
+            else if (strcasecmp(cfunc, "format") == 0) cfunc = "_vb0_format_str";
+            else if (strcasecmp(cfunc, "join") == 0) {
+                snprintf(buf, sizeof(buf), "\"\"");
+                return strdup(buf);
+            } else if (strcasecmp(cfunc, "int") == 0) cfunc = "floor";
             else if (strcasecmp(cfunc, "fix") == 0) cfunc = "trunc";
             else if (strcasecmp(cfunc, "rnd") == 0) {
                 /* Rnd: return random [0,1) */
@@ -564,6 +605,27 @@ static char *expr_to_c(CodeGen *cg, Expr *e)
                 cfunc = "floor";
             else if (strcasecmp(cname, "fix") == 0)
                 cfunc = "trunc";
+            /* String functions */
+            else if (strcasecmp(cname, "ltrim") == 0) cfunc = "_vb0_ltrim";
+            else if (strcasecmp(cname, "rtrim") == 0) cfunc = "_vb0_rtrim";
+            else if (strcasecmp(cname, "trim") == 0) cfunc = "_vb0_trim";
+            else if (strcasecmp(cname, "lcase") == 0) cfunc = "_vb0_lcase";
+            else if (strcasecmp(cname, "ucase") == 0) cfunc = "_vb0_ucase";
+            else if (strcasecmp(cname, "left") == 0) cfunc = "_vb0_strleft";
+            else if (strcasecmp(cname, "right") == 0) cfunc = "_vb0_strright";
+            else if (strcasecmp(cname, "mid") == 0) cfunc = "_vb0_mid";
+            else if (strcasecmp(cname, "strreverse") == 0 || strcasecmp(cname, "reverse") == 0)
+                cfunc = "_vb0_strreverse";
+            else if (strcasecmp(cname, "space") == 0) cfunc = "_vb0_space";
+            else if (strcasecmp(cname, "instr") == 0) cfunc = "_vb0_instr";
+            else if (strcasecmp(cname, "instrrev") == 0) cfunc = "_vb0_instrrev";
+            else if (strcasecmp(cname, "replace") == 0) cfunc = "_vb0_replace";
+            else if (strcasecmp(cname, "asc") == 0) cfunc = "_vb0_asc";
+            else if (strcasecmp(cname, "chr") == 0 || strcasecmp(cname, "char") == 0)
+                cfunc = "_vb0_chr";
+            else if (strcasecmp(cname, "len") == 0) cfunc = "strlen";
+            else if (strcasecmp(cname, "format") == 0) cfunc = "_vb0_format_str";
+            else if (strcasecmp(cname, "join") == 0) cfunc = "_vb0_join";
 
             char args[1024] = {0};
             int offset = 0;
@@ -572,6 +634,12 @@ static char *expr_to_c(CodeGen *cg, Expr *e)
                 offset += snprintf(args + offset, sizeof(args) - offset,
                                    "%s%s", i > 0 ? ", " : "", ac);
                 free(ac);
+            }
+            /* Handle Join specially -- arrays aren't first-class yet, use arg count 0 */
+            if (strcasecmp(cname, "join") == 0) {
+                /* Join not yet supported without array types */
+                snprintf(buf, sizeof(buf), "\"\"");
+                break;
             }
             snprintf(buf, sizeof(buf), "%s(%s)", cfunc, args);
             break;
@@ -885,7 +953,8 @@ void codegen_program(CodeGen *cg, Program *prog)
     cg_emit_raw(cg, "#include <stdio.h>\n");
     cg_emit_raw(cg, "#include <stdlib.h>\n");
     cg_emit_raw(cg, "#include <string.h>\n");
-    cg_emit_raw(cg, "#include <math.h>\n\n");
+    cg_emit_raw(cg, "#include <math.h>\n");
+    cg_emit_raw(cg, "#include <ctype.h>\n\n");
 
     /* Runtime: string concatenation helper */
     cg_emit_raw(cg,
@@ -909,6 +978,163 @@ void codegen_program(CodeGen *cg, Program *prog)
         "static int _vb0_sgn(int n) {\n"
         "    return (n > 0) ? 1 : (n < 0) ? -1 : 0;\n"
         "}\n\n"
+        "/* ── VB6 String Functions ── */\n"
+        "static char* _vb0_strclone(char *s) {\n"
+        "    if (!s) return strdup(\"\");\n"
+        "    return strdup(s);\n"
+        "}\n"
+        "static char* _vb0_ltrim(char *s) {\n"
+        "    if (!s) s = \"\";\n"
+        "    while (*s == ' ') s++;\n"
+        "    return strdup(s);\n"
+        "}\n"
+        "static char* _vb0_rtrim(char *s) {\n"
+        "    if (!s) s = \"\";\n"
+        "    int len = strlen(s);\n"
+        "    while (len > 0 && s[len-1] == ' ') len--;\n"
+        "    char *r = malloc(len + 1);\n"
+        "    memcpy(r, s, len); r[len] = '\\0';\n"
+        "    return r;\n"
+        "}\n"
+        "static char* _vb0_trim(char *s) {\n"
+        "    char *t = _vb0_ltrim(s);\n"
+        "    char *r = _vb0_rtrim(t);\n"
+        "    free(t);\n"
+        "    return r;\n"
+        "}\n"
+        "static char* _vb0_lcase(char *s) {\n"
+        "    if (!s || !*s) return strdup(\"\");\n"
+        "    char *r = strdup(s); int i;\n"
+        "    for (i = 0; r[i]; i++) r[i] = (char)tolower(r[i]);\n"
+        "    return r;\n"
+        "}\n"
+        "static char* _vb0_ucase(char *s) {\n"
+        "    if (!s || !*s) return strdup(\"\");\n"
+        "    char *r = strdup(s); int i;\n"
+        "    for (i = 0; r[i]; i++) r[i] = (char)toupper(r[i]);\n"
+        "    return r;\n"
+        "}\n"
+        "static char* _vb0_strleft(char *s, int n) {\n"
+        "    if (!s) s = \"\";\n"
+        "    int len = strlen(s);\n"
+        "    if (n <= 0) return strdup(\"\");\n"
+        "    if (n > len) n = len;\n"
+        "    char *r = malloc(n + 1);\n"
+        "    memcpy(r, s, n); r[n] = '\\0';\n"
+        "    return r;\n"
+        "}\n"
+        "static char* _vb0_strright(char *s, int n) {\n"
+        "    if (!s) s = \"\";\n"
+        "    int len = strlen(s);\n"
+        "    if (n <= 0) return strdup(\"\");\n"
+        "    if (n > len) n = len;\n"
+        "    char *r = malloc(n + 1);\n"
+        "    memcpy(r, s + len - n, n); r[n] = '\\0';\n"
+        "    return r;\n"
+        "}\n"
+        "static char* _vb0_mid(char *s, int start, int len) {\n"
+        "    if (!s) s = \"\";\n"
+        "    int slen = strlen(s);\n"
+        "    if (start < 1) start = 1;\n"
+        "    if (start > slen) return strdup(\"\");\n"
+        "    if (len <= 0) return strdup(\"\");\n"
+        "    int avail = slen - start + 1;\n"
+        "    if (len > avail) len = avail;\n"
+        "    char *r = malloc(len + 1);\n"
+        "    memcpy(r, s + start - 1, len); r[len] = '\\0';\n"
+        "    return r;\n"
+        "}\n"
+        "static int _vb0_asc(char *s) {\n"
+        "    if (!s || !*s) return 0;\n"
+        "    return (unsigned char)s[0];\n"
+        "}\n"
+        "static char* _vb0_chr(int n) {\n"
+        "    char *r = malloc(2);\n"
+        "    r[0] = (char)n; r[1] = '\\0';\n"
+        "    return r;\n"
+        "}\n"
+        "static char* _vb0_strreverse(char *s) {\n"
+        "    if (!s) s = \"\";\n"
+        "    int len = strlen(s); char *r = malloc(len + 1);\n"
+        "    int i;\n"
+        "    for (i = 0; i < len; i++) r[i] = s[len - 1 - i];\n"
+        "    r[len] = '\\0';\n"
+        "    return r;\n"
+        "}\n"
+        "static char* _vb0_space(int n) {\n"
+        "    if (n <= 0) return strdup(\"\");\n"
+        "    char *r = malloc(n + 1);\n"
+        "    memset(r, ' ', n); r[n] = '\\0';\n"
+        "    return r;\n"
+        "}\n"
+        "static int _vb0_instr(char *haystack, char *needle) {\n"
+        "    if (!haystack || !needle || !*haystack || !*needle) return 0;\n"
+        "    char *p = strstr(haystack, needle);\n"
+        "    if (!p) return 0;\n"
+        "    return (int)(p - haystack + 1);\n"
+        "}\n"
+        "static int _vb0_instrrev(char *haystack, char *needle) {\n"
+        "    if (!haystack || !needle || !*haystack || !*needle) return 0;\n"
+        "    int hlen = strlen(haystack), nlen = strlen(needle);\n"
+        "    if (nlen > hlen) return 0;\n"
+        "    int pos = -1, i;\n"
+        "    for (i = 0; i <= hlen - nlen; i++) {\n"
+        "        if (strncmp(haystack + i, needle, nlen) == 0) pos = i + 1;\n"
+        "    }\n"
+        "    return pos;\n"
+        "}\n"
+        "static char* _vb0_replace(char *src, char *find, char *repl) {\n"
+        "    if (!src) src = \"\";\n"
+        "    if (!find || !*find) return strdup(src);\n"
+        "    int flen = strlen(find), rlen = strlen(repl), slen = strlen(src);\n"
+        "    int count = 0, i;\n"
+        "    for (i = 0; i <= slen - flen; i++) {\n"
+        "        if (strncmp(src + i, find, flen) == 0) { count++; i += flen - 1; }\n"
+        "    }\n"
+        "    char *r = malloc(slen + count * (rlen - flen) + 1);\n"
+        "    char *dst = r;\n"
+        "    for (i = 0; i < slen; i++) {\n"
+        "        if (i <= slen - flen && strncmp(src + i, find, flen) == 0) {\n"
+        "            memcpy(dst, repl, rlen); dst += rlen; i += flen - 1;\n"
+        "        } else { *dst++ = src[i]; }\n"
+        "    }\n"
+        "    *dst = '\\0';\n"
+        "    return r;\n"
+        "}\n"
+        "static char* _vb0_format_int(int n) {\n"
+        "    char buf[64];\n"
+        "    snprintf(buf, sizeof(buf), \"%%d\", n);\n"
+        "    return strdup(buf);\n"
+        "}\n"
+        "static char* _vb0_format_dbl(double n) {\n"
+        "    char buf[128];\n"
+        "    snprintf(buf, sizeof(buf), \"%%g\", n);\n"
+        "    return strdup(buf);\n"
+        "}\n"
+        "static char* _vb0_format_str(char *s, char *fmt) {\n"
+        "    if (!s) s = \"\";\n"
+        "    if (!fmt) return strdup(s);\n"
+        "    /* Handle common format patterns */\n"
+        "    if (strcmp(fmt, \">\") == 0) return _vb0_ucase(s);\n"
+        "    if (strcmp(fmt, \"<\") == 0) return _vb0_lcase(s);\n"
+        "    return strdup(s);\n"
+        "}\n"
+        "static char* _vb0_join(char **arr, int count, char *delim) {\n"
+        "    if (!delim) delim = \"\";\n"
+        "    int dlen = strlen(delim), i;\n"
+        "    int total = count * dlen + 1;\n"
+        "    for (i = 0; i < count; i++) total += strlen(arr[i]);\n"
+        "    char *r = malloc(total + 1);\n"
+        "    char *dst = r;\n"
+        "    for (i = 0; i < count; i++) {\n"
+        "        if (i > 0) { memcpy(dst, delim, dlen); dst += dlen; }\n"
+        "        int slen = strlen(arr[i]);\n"
+        "        memcpy(dst, arr[i], slen); dst += slen;\n"
+        "    }\n"
+        "    *dst = '\\0';\n"
+        "    return r;\n"
+        "}\n"
+
     );
 
     /* ── Class struct typedefs ── */

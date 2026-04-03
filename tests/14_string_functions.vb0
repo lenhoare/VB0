@@ -1,0 +1,46 @@
+DIM s AS STRING
+PRINT "=== Trim ==="
+s = "  hello world  "
+PRINT Trim(s)
+PRINT LTrim(s)
+PRINT RTrim(s)
+PRINT "=== Case ==="
+s = "Hello World"
+PRINT LCase(s)
+PRINT UCase(s)
+PRINT "=== Left Right Mid ==="
+s = "abcdef"
+PRINT Left(s, 3)
+PRINT Right(s, 2)
+PRINT Mid(s, 2, 3)
+PRINT "=== Instr ==="
+s = "hello world"
+PRINT Instr(s, "world")
+PRINT InstrRev(s, "o")
+PRINT "=== Replace ==="
+s = "the cat sat"
+PRINT Replace(s, "ca", "dog")
+PRINT "=== Space ==="
+s = Space(5)
+PRINT s
+PRINT Space(3)
+PRINT "=== Reverse ==="
+PRINT StrReverse("abcdef")
+PRINT "=== Asc Chr ==="
+PRINT Asc("A")
+s = Chr(65)
+PRINT s
+PRINT "=== Len ==="
+PRINT Len("hello")
+PRINT Len(s)
+PRINT "=== Format ==="
+s = "hello"
+PRINT Format(s, ">")
+PRINT Format(s, "<")
+PRINT "=== Combined ==="
+s = "  Hello World  "
+PRINT Len(Trim(s))
+PRINT UCase(Trim(s))
+PRINT Left(Trim(s), 5)
+PRINT "=== Done ==="
+END
