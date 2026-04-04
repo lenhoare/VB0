@@ -258,17 +258,41 @@ static Stmt *parse_statement(Parser *p)
         return NULL;
     }
 
-    /* DIM */
-    if (kw(p->current.text, "DIM")) {
+    /* PRIVATE / DIM */
+    /* PRIVATE implies DIM, so we handle both */
+    int is_priv = 0;
+    int is_dim = 0;
+    
+    if (kw(p->current.text, "PRIVATE")) {
+        is_priv = 1;
         advance(p);
+        /* If PRIVATE is seen, DIM is optional (e.g. "PRIVATE x AS INT" or "PRIVATE DIM x") */
+        if (kw(p->current.text, "DIM")) {
+            is_dim = 1;
+            advance(p);
+        }
+    } else if (kw(p->current.text, "DIM")) {
+        is_dim = 1;
+        advance(p);
+    }
+
+    /* If neither PRIVATE nor DIM was seen, this isn't a declaration.
+     * Fall through to other statements. */
+    if (!is_priv && !is_dim) {
+        /* Don't consume tokens; let the caller handle it */
+    } else {
+        /* We have a declaration */
+
+        /* Now we expect an identifier for the variable name */
         char name[256] = {0};
         if (p->current.kind == T_IDENT) {
             strncpy(name, p->current.text, sizeof(name) - 1);
             advance(p);
         }
 
-        int array_size = -1; /* default: scalar */
-        int array_size2 = -1; /* second dimension */
+        int is_array = 0;
+        int array_size = -1;
+        int array_size2 = -1;
         if (p->current.kind == T_LPAREN) {
             advance(p);
             int sz = 0;
@@ -279,7 +303,6 @@ static Stmt *parse_statement(Parser *p)
                 sz = 100;
                 advance(p);
             }
-            /* Check for 2D array: name(rows, cols) */
             if (p->current.kind == T_COMMA) {
                 advance(p);
                 int sz2 = 0;
@@ -294,14 +317,14 @@ static Stmt *parse_statement(Parser *p)
             }
             if (p->current.kind == T_RPAREN) {
                 advance(p);
-                array_size = sz + 1; /* 0-based */
-                register_array(p, name);
+                array_size = sz + 1;
+                is_array = 1;
             } else {
                 error_at(p, "Expected ')' after array size");
-                array_size = 0;
-                register_array(p, name);
             }
         }
+
+        if (is_array) register_array(p, name);
 
         TypeKind type = TYPE_INT;
         if (kw(p->current.text, "AS")) {

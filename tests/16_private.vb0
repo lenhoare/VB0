@@ -1,0 +1,22 @@
+' Test: PRIVATE and DIM keywords
+PRIVATE x AS INT
+DIM y AS INT
+PRIVATE DIM z AS INT
+PRIVATE name AS STRING
+
+x = 1
+y = 2
+z = 3
+name = "test"
+
+PRINT x
+PRINT y
+PRINT z
+PRINT name
+
+IF x = 1 THEN
+    PRINT "X is one"
+END IF
+
+PRINT "=== Done ==="
+END
